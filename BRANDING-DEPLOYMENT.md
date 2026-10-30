@@ -19,7 +19,7 @@ Browser inspection at the public URL showed the JohnGym wordmark, background `rg
 The login retained passkey/device-code/recovery controls and no anonymous guest bypass.
 The final local built application passed 100 tests across 10 affected suites, build, and both desktop/mobile navigation journeys including Home and Settings.
 
-The full inherited suite was started before review fixes and overlapped those edits; it is not represented as an all-green acceptance gate. Its old source-link assertion failed during that overlap, while the final affected suite passed. Logs are retained in ignored `frontend/artifacts/branding/`.
+The full inherited suite was started before review fixes and overlapped those edits; it is not represented as an all-green acceptance gate. Its old source-link assertion failed during that overlap, while the final affected suite passed. The obsolete overlapping full run was stopped after the final focused gates passed; no complete-suite success is claimed. Logs are retained in ignored `frontend/artifacts/branding/`.
 
 API health returned `{"ok":true,"users":1,"writable":true}`. Anonymous `/api/data` remained HTTP 401. Both production containers were healthy. API container ID `13eb14ccf6e3eb5b59af7661305ff15c842879880eec097bb3ad1724c2e0586d` and start time `2026-10-30T15:04:19.479790471Z` remained unchanged. No API restart, database migration, user-data write, or role change was performed.
 
