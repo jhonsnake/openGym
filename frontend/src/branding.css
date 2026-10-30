@@ -1,0 +1,31 @@
+/* JohnGym web palette, based on the supplied public EPONA color evidence only.
+   Deliberately follows index.css so existing controls share the same tokens. */
+:root[data-web-branding="true"] {
+  color-scheme: dark;
+  --bg:#07003c; --bg-el:#14007d;
+  --surface:#1d0b6b; --surface-2:#210d67; --surface-3:#3d2c8f;
+  --label:#ffffff; --label-2:#c3bce8; --label-3:#c3bce8; --label-4:#c3bce8;
+  --sep:#3d2c8f; --sep-op:#3d2c8f;
+  --acc:#ffad2f; --acc-2:#ffad2f; --on-acc:#07003c;
+  --orange:#ffad2f;
+  --acc-soft:rgba(255,173,47,.16);
+  --acc-line:rgba(255,173,47,.38);
+}
+/* Keep the existing Light/System controls useful, using the same brand inks. */
+:root[data-web-branding="true"][data-theme="light"] {
+  color-scheme:light;
+  --bg:#ffffff; --bg-el:#ffffff; --surface:#ffffff;
+  --surface-2:#f1eefb; --surface-3:#c3bce8;
+  --label:#07003c; --label-2:#210d67; --label-3:#3d2c8f; --label-4:#3d2c8f;
+  --sep:#c3bce8; --sep-op:#c3bce8;
+  --acc:#14007d; --acc-2:#14007d; --on-acc:#ffffff;
+  --acc-soft:rgba(20,0,125,.1);
+  --acc-line:rgba(20,0,125,.38);
+}
+:root[data-web-branding="true"] .wordmark{font-size:34px;font-weight:700;letter-spacing:-.04em;margin:10px 0 4px;color:var(--label)}
+:root[data-web-branding="true"] .wordmark span{color:var(--acc)}
+:root[data-web-branding="true"] :focus-visible{outline:2.5px solid var(--acc);outline-offset:3px}
+@media (prefers-contrast:more){
+  :root[data-web-branding="true"]{--sep:#c3bce8;--sep-op:#c3bce8}
+  :root[data-web-branding="true"][data-theme="light"]{--sep:#3d2c8f;--sep-op:#3d2c8f}
+}

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { MEDIA_CACHE } from './media-prefetch.js'
 
 const SW = readFileSync(fileURLToPath(new URL('../../public/sw.js', import.meta.url)), 'utf8')
-const BUILD = 'opengym-rt-__BUILD__'
+const BUILD = 'johngym-shell-__BUILD__'
 const MEDIA = 'opengym-media-v1'
 const ORIGIN = 'https://gym.test'
 const keyOf = r => (typeof r === 'string' ? new URL(r, ORIGIN + '/').href : r.url)
@@ -94,6 +94,19 @@ describe('sw.js exercise media', () => {
 
     w.net.up = false
     expect(await (await w.get('/gif/0003.gif')).text()).toBe('old gif')
+  })
+
+  it('keeps the old cache when copying its offline media fails', async () => {
+    const w = worker()
+    const old = await w.caches.open('opengym-rt-oldbuild')
+    await old.put(ORIGIN + '/gif/0003.gif', new Response('offline gif', { headers: { 'content-type': 'image/gif' } }))
+    const media = await w.caches.open(MEDIA)
+    media.put = async () => { throw new Error('quota exceeded') }
+    const shell = await w.caches.open(BUILD)
+    await shell.put('index.html', new Response('<html></html>'))
+    await w.activate()
+    expect(await w.caches.keys()).toContain('opengym-rt-oldbuild')
+    expect(await (await old.match(ORIGIN + '/gif/0003.gif')).text()).toBe('offline gif')
   })
 
   it('does not adopt a login page an older build had cached under an image\'s URL', async () => {

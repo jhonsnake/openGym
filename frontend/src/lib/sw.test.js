@@ -22,7 +22,7 @@ class FakeCaches {
   async match(req) { for (const c of this.c.values()) { const hit = await c.match(req); if (hit) return hit } return undefined }
 }
 
-const CACHE = 'opengym-rt-__BUILD__'   // the placeholder the build rewrites (vite.config.js swStamp)
+const CACHE = 'johngym-shell-__BUILD__'   // the placeholder the build rewrites (vite.config.js swStamp)
 const handlers = {}
 let skipWaiting = 0
 
@@ -59,6 +59,21 @@ const shellHtml = '<html><head><script src="./assets/index-new.js"></script></he
 beforeEach(() => { delete globalThis.self })
 
 describe('sw.js install and activate', () => {
+  it('activation preserves unrelated offline drafts and user caches', async () => {
+    await loadSW()
+    await previousBuild()
+    const drafts = await caches.open('offline-drafts')
+    await drafts.put('draft', { body: 'unsent workout' })
+    globalThis.fetch = async u => (String(u) === 'index.html'
+      ? { ok: true, status: 200, redirected: false, text: async () => shellHtml }
+      : { ok: true, status: 200, clone: () => ({}) })
+    await fire('install')
+    await fire('activate')
+    expect(await caches.keys()).toContain('offline-drafts')
+    expect(await drafts.match('draft')).toEqual({ body: 'unsent workout' })
+    expect(await caches.keys()).not.toContain('opengym-rt-oldbuild')
+  })
+
   it('a precache that cannot reach the server fails the install and keeps the build on the device', async () => {
     await loadSW()
     const old = await previousBuild()

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:fatigue-probe": "node scripts/fatigue-monotonic-probe.mjs",
-    "pdf:check": "node scripts/pdf/render-samples.mjs --out pdf-samples --langs en,de,ar --paper A4,Letter --check"
+    "pdf:check": "node scripts/pdf/render-samples.mjs --out pdf-samples --langs en,de,ar --paper A4,Letter --check",
+    "test:e2e": "playwright test"
   },
   "license": "AGPL-3.0-or-later",
   "dependencies": {
@@ -35,6 +36,7 @@
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
+    "@playwright/test": "1.64.1",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "^4.1.12",
     "fast-check": "^4.10.2",

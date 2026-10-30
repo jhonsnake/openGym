@@ -118,12 +118,20 @@ describe('Seasonal themes', () => {
     expect(mocks.S.seasonal.halloween).toBe('on')
   })
 
-  it('Spooky colors is off until switched on', () => {
+  it('Spooky colors is off until switched on in native clients', () => {
+    mocks.MOBILE = true
     mount()
     const sw = rowOf('Spooky colors').querySelector('[role="switch"]')
     expect(sw.getAttribute('aria-checked')).toBe('false')
     act(() => sw.click())
     expect(mocks.S.seasonal).toEqual({ halloweenColors: true })
+  })
+
+  it('keeps the fixed web palette without changing saved seasonal colors', () => {
+    mocks.S.seasonal = { halloweenColors: true }
+    mount()
+    expect(rowOf('Spooky colors')).toBeUndefined()
+    expect(mocks.S.seasonal.halloweenColors).toBe(true)
   })
 
   it('Also during workouts is on until switched off, and then stored', () => {

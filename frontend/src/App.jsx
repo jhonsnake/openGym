@@ -100,9 +100,14 @@ const resolveTheme = theme => theme === 'light' || theme === 'dark'
 function applyPrefs(theme, accent) {
   const de = document.documentElement
   de.dataset.theme = resolveTheme(theme)
-  applyAccent(de, accent, de.dataset.theme)
+  // Keep synced preferences intact; the web hotfix has one fixed brand accent.
+  if (MOBILE) applyAccent(de, accent, de.dataset.theme)
+  else {
+    delete de.dataset.accent
+    for (const key of ['--acc', '--acc-2', '--on-acc', '--acc-soft', '--acc-line']) de.style.removeProperty(key)
+  }
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.content = de.dataset.theme === 'light' ? '#f2f2f7' : '#000000'
+  if (meta) meta.content = de.dataset.theme === 'light' ? '#ffffff' : '#07003c'
   if (MOBILE) setSystemBarsLight(de.dataset.theme === 'light')
 }
 

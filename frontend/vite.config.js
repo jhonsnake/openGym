@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { configDefaults } from 'vitest/config'
 import { lazyAssets, stampSw } from './scripts/sw-stamp.mjs'
 
 const backend = process.env.API_TARGET || 'http://127.0.0.1:3000'
@@ -122,5 +123,5 @@ export default defineConfig({
   // lower, scripts/check-bundle-syntax.mjs catches (its test builds the bundle).
   build: { chunkSizeWarningLimit: 1500, target: ['safari15', 'chrome100', 'firefox100', 'edge100'] },
   // Gives happy-dom tests a working localStorage on Node 24+ (#733).
-  test: { setupFiles: ['./src/test-setup.js'] }
+  test: { setupFiles: ['./src/test-setup.js'], exclude: [...configDefaults.exclude, 'e2e/**'] }
 })

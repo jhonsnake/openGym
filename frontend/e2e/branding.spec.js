@@ -1,0 +1,28 @@
+import { test, expect } from '@playwright/test'
+
+test('JohnGym login, guest navigation, saved preferences and light theme', async ({ page }, testInfo) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => localStorage.setItem('gym_state_v1', JSON.stringify({ theme: 'dark', accent: 'custom', accentCustom: '#00ff00', lang: 'en' })))
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'JohnGym' })).toBeVisible()
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(7, 0, 60)')
+  await expect(page.locator('.wordmark span')).toHaveCSS('color', 'rgb(255, 173, 47)')
+  await page.screenshot({ path: testInfo.outputPath('login.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Continue without account' }).click()
+  await expect(page.locator('#tabbar')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'JohnGym' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('home-dark.png'), fullPage: true })
+  await page.goto('/#/settings/look')
+  await expect(page.getByText('Body diagram', { exact: true })).toBeVisible()
+  await expect(page.getByText('Accent color', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Light', exact: true }).click()
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gym_state_v1')))
+  expect(saved.accent).toBe('custom')
+  expect(saved.accentCustom).toBe('#00ff00')
+  await page.screenshot({ path: testInfo.outputPath('settings-light.png'), fullPage: true })
+  expect(errors).toEqual([])
+  await page.goto('/#/settings/about')
+  await expect(page.getByRole('link', { name: 'Source code' })).toHaveAttribute('href', 'https://github.com/jhonsnake/openGym/tree/branding/johngym-stable-hotfix')
+})

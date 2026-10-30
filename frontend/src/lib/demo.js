@@ -11,4 +11,5 @@
 // lands in a self-hosted bundle.
 export const DEMO = import.meta.env.VITE_DEMO === '1'
 export const DEMO_SEEDED = 'gym_demo_seeded_v1'
-export const REPO = 'https://gitlab.com/DuarteSantos8/opengym'
+// AGPL §13 offer for this modified JohnGym web build. Upstream notices remain in Settings.
+export const REPO = 'https://github.com/jhonsnake/openGym/tree/branding/johngym-stable-hotfix'
