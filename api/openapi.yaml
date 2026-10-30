@@ -177,6 +177,155 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/access:
+    get:
+      tags: [meta]
+      summary: Read current identity, operational roles, own entitlement, capabilities and own version tokens.
+      responses:
+        '200':
+          description: Committed, scoped authority readback; never a personal profile or training history.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Authority unavailable; fail closed.
+  /api/admin/operations/users:
+    get:
+      tags: [admin]
+      summary: Read identity and role/version metadata for operational role management; excludes health/activity.
+      responses:
+        '200':
+          description: Committed, scoped authority readback; never a personal profile or training history.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Authority unavailable; fail closed.
+  /api/admin/operations/roles:
+    post:
+      tags: [admin]
+      summary: Replace another active account operational roles as an existing active administrator.
+      responses:
+        '200':
+          description: Committed, scoped authority readback; never a personal profile or training history.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Authority unavailable; fail closed.
+        '400':
+          description: Invalid closed payload or unsupported transition.
+        '409':
+          description: Stale aggregate version or operation tuple mismatch.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - operationId
+              - expectedVersion
+              - payload
+              properties:
+                operationId: &id001
+                  type: string
+                  format: uuid
+                expectedVersion:
+                  type: integer
+                  minimum: 0
+                payload:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - accountId
+                  - roles
+                  - reason
+                  properties:
+                    accountId: &id002
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                    roles:
+                      type: array
+                      uniqueItems: true
+                      items:
+                        type: string
+                        enum:
+                        - CLIENT
+                        - TRAINER
+                        - COORDINATOR
+                    reason: &id003
+                      type: string
+                      minLength: 1
+                      maxLength: 280
+  /api/admin/operations/scopes:
+    post:
+      tags: [admin]
+      summary: Assign or remove an explicit coordinator/client pair without self assignment or global scope.
+      responses:
+        '200':
+          description: Committed, scoped authority readback; never a personal profile or training history.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Authority unavailable; fail closed.
+        '400':
+          description: Invalid closed payload or unsupported transition.
+        '409':
+          description: Stale aggregate version or operation tuple mismatch.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - operationId
+              - expectedVersion
+              - payload
+              properties:
+                operationId: *id001
+                expectedVersion:
+                  type: integer
+                  minimum: 0
+                payload:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - coordinatorId
+                  - clientId
+                  - assigned
+                  - reason
+                  properties:
+                    coordinatorId: *id002
+                    clientId: *id002
+                    assigned:
+                      type: boolean
+                    reason: *id003
   /api/health:
     get:
       tags: [meta]

@@ -37,6 +37,9 @@ import { effectiveRoutineId } from './queue.js';
 import { stampPut } from './sync-stamps.js';
 import { atomicWrite as durableWrite } from './durable.js';
 import { excusedOn, nudgeFor, nudgeWindowOpen, toneOf } from './nudge.js';
+import { createAuthorityStore } from './authority-store.js';
+import { createIdentityAuthority } from './identity-authority.js';
+import { createAuthorityService } from './authority-service.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -48,6 +51,7 @@ const RP_NAME = process.env.RP_NAME || 'openGym';
 // self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
+const MANAGED_SUBSCRIPTIONS = /^(1|true|yes|on)$/i.test(process.env.MANAGED_SUBSCRIPTIONS || '');
 // The first profile made on an instance with no profiles at all becomes its admin (#328), so a
 // fresh install has someone who can open the admin dashboard without editing ADMIN_UIDS and
 // restarting. Stored on the user record (user.admin), which isAdmin already honours. It is
@@ -166,6 +170,15 @@ function ownerId() {
   return db.users.find(isAdmin)?.id || null;
 }
 const isOwner = user => !!user && isAdmin(user) && user.id === ownerId();
+let authorityStore, authorityService;
+try {
+  authorityStore = createAuthorityStore({ dataDir: DATA });
+  const authorityIdentity = createIdentityAuthority({ getUser: uid => db.users.find(user => user.id === uid) || null });
+  authorityService = createAuthorityService({ store: authorityStore, identity: authorityIdentity, isAdmin: uid => isAdmin(db.users.find(user => user.id === uid)), isOwner: uid => isOwner(db.users.find(user => user.id === uid)) });
+} catch (error) {
+  if (MANAGED_SUBSCRIPTIONS) throw error;
+  console.error('operational authority unavailable:', error.message);
+}
 // 0600: db.json holds passkey credential material. It used to be covered by a blanket 0700 on
 // the whole directory; now that the directory stays traversable, the file carries its own mode.
 // Once the new version is on disk, a second copy of it goes to db.json.bak, the same durable
@@ -2108,6 +2121,33 @@ function dataWritable() {
 }
 
 const routes = {
+  'GET /api/access': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try { json(res, 200, authorityService.accessSnapshot(user.id, { managedSubscriptions: MANAGED_SUBSCRIPTIONS, requestId: crypto.randomUUID() })); }
+    catch (error) { json(res, error.code === 'unauthenticated' ? 401 : 403, { error: 'forbidden', code: error.code || 'forbidden' }); }
+  },
+  'GET /api/admin/operations/users': async (req, res) => {
+    const admin = requireAdmin(req, res); if (!admin) return;
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const users = db.users.filter(user => !user.deleted).map(user => ({ account: { id: user.id }, roles: authorityStore.db.prepare('SELECT role FROM operational_roles WHERE account_id=? AND removed_at_utc IS NULL ORDER BY role').all(user.id).map(row => row.role), version: authorityStore.getAggregateVersion('ROLES', JSON.stringify([user.id])) }));
+    json(res, 200, { users, requestId: crypto.randomUUID() });
+  },
+  'POST /api/admin/operations/roles': async (req, res) => {
+    const admin = requireAdmin(req, res); if (!admin) return;
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req);
+    try { json(res, 200, authorityService.setRoles({ actorId: admin.id, body, requestId: crypto.randomUUID() })); }
+    catch (error) { json(res, error.code === 'conflict' ? 409 : error.code === 'forbidden' ? 403 : 400, { error: error.message, code: error.code || 'validation-error' }); }
+  },
+  'POST /api/admin/operations/scopes': async (req, res) => {
+    const admin = requireAdmin(req, res); if (!admin) return;
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req);
+    try { json(res, 200, authorityService.setScope({ actorId: admin.id, body, requestId: crypto.randomUUID() })); }
+    catch (error) { json(res, error.code === 'conflict' ? 409 : error.code === 'forbidden' ? 403 : 400, { error: error.message, code: error.code || 'validation-error' }); }
+  },
   // 503 rather than a flag in a 200: the container healthcheck is `wget --spider`, which reads
   // the status and nothing else, and an instance that cannot write its data directory is exactly
   // what "unhealthy" is for. The 200 keeps the shape it had, plus the flag it is now asserting.
@@ -2962,6 +3002,7 @@ function bodyDeadline(req) {
 
 // The Capacitor WebView origins of the Android and iOS app.
 const APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost', 'http://localhost']);
+const managedPersonalTrainingRoute = key => key === 'GET /api/data' || key === 'PUT /api/data' || key === 'GET /api/data/rev' || key === 'GET /api/nudge-check' || key.startsWith('GET /api/media/') || key.startsWith('PUT /api/media/') || key.startsWith('DELETE /api/media/') || key.startsWith('POST /api/coach/') || key.startsWith('GET /api/coach/') || key.startsWith('POST /api/push/') || key.startsWith('GET /api/push/');
 
 const server = http.createServer(async (req, res) => {
   bodyDeadline(req);
@@ -3006,6 +3047,14 @@ const server = http.createServer(async (req, res) => {
   if (mm) { key = req.method + ' /api/media/{hash}'; req.mediaHash = mm[1]; }
   const handler = routes[key];
   if (!handler) return json(res, 404, { error: 'not found' });
+  if (MANAGED_SUBSCRIPTIONS && managedPersonalTrainingRoute(key)) {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    try {
+      const access = authorityService?.accessSnapshot(user.id, { managedSubscriptions: true, requestId: crypto.randomUUID() });
+      if (!access?.capabilities.includes('ACCESS_PERSONAL_TRAINING')) return json(res, 403, { error: 'training access is not entitled', code: 'not-entitled' });
+    } catch { return json(res, 403, { error: 'training access is not entitled', code: 'not-entitled' }); }
+  }
   if (!csrfOk(req, key)) {
     // A Bearer that does not verify and no cookie beside it: nothing ambient is in play, the caller
     // is simply not signed in. That is the paired app once its token is revoked or expired, and it
