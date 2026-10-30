@@ -19,6 +19,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { validateCatalogue } from './validate.mjs'
+import { buildAuthorityManifest } from './build-authority-manifest.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const CAT = path.join(ROOT, 'catalogue')
@@ -121,6 +122,10 @@ for (const [rel, body] of Object.entries(files)) {
   stale.push(rel)
   if (!check) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body) }
 }
+const authorityManifestPath = path.join(ROOT, 'api/exercise-catalogue.json')
+const authorityManifestBody = buildAuthorityManifest({ exdb: rows, exalias: alias, outputPath: authorityManifestPath, check })
+if (check && !fs.existsSync(authorityManifestPath)) stale.push('api/exercise-catalogue.json')
+if (!check && authorityManifestBody.length === 0) throw new Error('authority exercise manifest was empty')
 if (check) {
   if (stale.length) { console.error('Out of date, run node scripts/catalogue/build.mjs:\n  ' + stale.join('\n  ')); process.exit(1) }
   console.log(`catalogue: ${rows.length} exercises, generated files up to date`)
