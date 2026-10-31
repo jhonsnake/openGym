@@ -1,10 +1,25 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## HOLD web vigente: segundo hotfix de textos JohnGym
+
+John pidió retirar los textos visibles openGym de la interfaz y conservar JohnGym en español e inglés. La coordinación prepara el hotfix aislado en /home/jhonsnake/openGym-branding-hotfix, sólo frontend visible; mantiene licencias/avisos, rutas/IDs internos, datos, API y PASSWORD_LOGIN=1. No hay despliegue productivo de esta sesión en curso: el hito backend publicado en7fefdc74a933d412f42da49696ed7a41e716c75a es sólo fuente, con803testsAPI y revisión crítica aprobados.
+
+Bloquear despliegue web y rollout MVP combinado hasta confirmación explícita de cierre. El trabajo local, builds y QA continúan. Al cerrar: leer handoff/base/commit/delta y nuevo baseline servido; integrar los textos por rutas y hashes desde la base verdadera, sin cherry-pick ciego ni reemplazar componentes MVP con archivos del hotfix estable. No retirar licencias/avisos ni cambiar identificadores internos. PASSWORD_LOGIN=1 e invitaciones/suscripciones siguen vigentes. Este hold web nuevo es distinto del hold breve de contraseña ya retirado.
+
+
 ## Credenciales productivas: PASSWORD_LOGIN=1 verificado y obligatorio en MVP
 
 John confirmó la habilitación de usuario/contraseña junto con passkeys e invitaciones y levantó el hold breve. Se verificó públicamente /api/config: password_login=true, invite_only=true, allow_guest=false, HTTP200; health ok=true/users=1/writable=true. No se probó aquí un envío real de contraseña ni registro. Cambio externo documentado en PASSWORD-LOGIN.md, commit b408c1b659f1ebe33db0d76a579cef71a446fa55 de hermes-stack, remoto comprobado; API estable sin cambio de imagen y datos/cuentas intactos según la coordinación.
 
 La futura entrega MVP debe preservar PASSWORD_LOGIN=1 y ambos métodos de autenticación, sin saltar invitaciones, consentimiento, roles o vigencia. La plantilla local ya tiene1; contrato de despliegue reforzado y suite operativa23 PASS. Los gates funcionales, privacidad, fuentes y restore siguen pendientes independientemente del hold retirado.
+
+## Publicación backend y resultado frontend reconciliados
+
+Fuente backend publicada en7fefdc74a933d412f42da49696ed7a41e716c75a, remoto y lectura pública anónima del código comprobados por hash. Corresponde al API de803pruebas sin fallos/saltos y revisión crítica aprobada; no implica despliegue ni finalización del MVP.
+
+La suite frontend congelada terminó con6618pruebas:6616PASS/2FAIL. Se corrigió una aserción asíncrona del montaje App esperando la llamada real del efecto, sin eliminar el assert. El fallo CSP provino de un auxiliar web/Dockerfile antiguo en la fixture, distinto del WIP Root; no de una excepción de CSP autorizada. Root App+CSP10/10PASS posteriores, pero la nueva suite completa sigue pendiente y debe capturar también todos los auxiliares sucios, no sólo frontend/API. El snapshot fallido se conserva como evidencia.
+
+T9 candidato continúa aislado con imagen API corregida y PASSWORD_LOGIN=1. Hold web de textos JohnGym activo hasta confirmación externa, sin impedir QA local. No sobrescribir el hotfix ni restaurar0 en autenticación; preservar todos los medios personales y gates de journeys, restore y activación nominal.
 
 ## Hito backend verificado: 803 pruebas y revisión crítica aprobadas
 
