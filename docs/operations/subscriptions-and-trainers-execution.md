@@ -1,5 +1,16 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## Prueba personal de medios implementada y verificada
+
+Receta explícita personal-test con BUILTIN_EXERCISE_MEDIA=1, todos los medios originales y avisos; comercial separado/default con0 ysinmedios. Ambos builds Docker reales exit0. Las6 pruebas de política pasaron sinfallos/saltos usando ambas imágenes. Se verificaron las13109 rutas/bytesSHA256:6554MP4+6554WebP+NOTICE; cabeceras de formato válidas, NginxHTTP200/MIMEcorrecto y hashes de avisos/licencia iguales. Dos builds negativos probaron rechazo de flags inconsistentes. No se visualizó ni alimentó a modelos con los activos.
+
+Imagen personal de comprobación: sha256:f142dc23386111312029577f417ba24a1921f84ae32a8d9f34f799917e0efc7e. Comercial de comprobación: sha256:e1b08df444057c669e1b0e4d411449f775b9fd8e80ab970a0f07d34ad6921cff. Son frontend8e7+overlay de receta, no candidato funcional final ni despliegue. El próximo artefacto de prueba del MVP usará la variante personal, NO la exclusión comercial. La instrucción de John no otorga licencia comercial ni altera suscripciones/roles.
+
+## Cambio de alcance vigente: prueba personal con animaciones
+
+La instrucción más reciente de John sustituye la exclusión de medios para la fase de prueba personal/no comercial: conservar todos los clips y miniaturas originales, sin modificar y con sus avisos. NOTICE.md admite fork no comercial con los medios de180px; no equivale a licencia comercial. Se mantendrán recetas separadas personal-test(conmedios) y comercial(sinmedios). No cambia vigencias/roles ni autoriza uso comercial, publicación como pack independiente o alimentar modelos con los medios. El catálogo contiene6554MP4+6554WebP, no GIFliterales. La verificación personal será exhaustiva por inventario/rutas/hashes/HTTP, no por inspección visual de los activos. Los apartados inferiores de exclusión son históricos para esta fase y siguen aplicando sólo al build comercial.
+
+
 ## Producción JohnGym: hotfix cerrado, hold retirado
 
 John notificó finalización verificada del hotfix: fuente 955d73fd41ebda7943dffd1ed5929ccef4d281c9, documentación 55f31aa9d5a84962d850c2fdb47e2f4f65acca93, rama pública branding/johngym-stable-hotfix. Handoff: /home/jhonsnake/openGym-branding-hotfix/BRANDING-DEPLOYMENT.md. Se leyó el handoff y se obtuvo la rama remota; no se hizo cherry-pick sobre el árbol sucio.

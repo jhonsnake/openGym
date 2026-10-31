@@ -7,6 +7,7 @@
 # QEMU — and QEMU-emulated npm installs are known to corrupt esbuild/rollup's platform-
 # specific native binaries, which is what breaks `vite build` with unrelated-looking
 # module-resolution errors.
+ARG BUILTIN_EXERCISE_MEDIA=0
 FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS build
 # The frontend sits at /app/frontend, not /app: the Coach's runtime-neutral core lives in
 # api/coach/core and is imported from frontend/src as ../../../api/coach/core/*, so the two
@@ -24,11 +25,15 @@ COPY frontend/ ./
 # image built between two releases calls itself the same thing, and "which build are you running?"
 # cannot be answered from the phone. Unset, the app reports package.json's version as before.
 ARG APP_BUILD=""
-# The managed commercial MVP ships no Gym Visual assets and must not request them.
-ENV VITE_BUILTIN_EXERCISE_MEDIA=0
+# The commercial default ships no Gym Visual assets; personal-test opts in explicitly.
+ARG BUILTIN_EXERCISE_MEDIA
+ENV VITE_BUILTIN_EXERCISE_MEDIA=${BUILTIN_EXERCISE_MEDIA}
+RUN case "$BUILTIN_EXERCISE_MEDIA" in 0|1) ;; *) echo "BUILTIN_EXERCISE_MEDIA must be 0 or 1" >&2; exit 1 ;; esac
 RUN APP_BUILD="$APP_BUILD" npm run build
 
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine AS runtime
+ARG BUILTIN_EXERCISE_MEDIA
+ENV BUILTIN_EXERCISE_MEDIA=${BUILTIN_EXERCISE_MEDIA}
 # Same reason as in api/Dockerfile: alpine fixes land faster than the nginx image is rebuilt.
 # The base's last instruction is USER 101, and apk then exits 99 — it cannot open its log as
 # that user. Upgrade as root, then switch back. 101 has to be the last USER in this file so
@@ -120,4 +125,18 @@ HEALTHCHECK --interval=5m \
             --timeout=5s \
             --retries=3 \
             CMD wget --spider -q "http://127.0.0.1:${NGINX_PORT}/" || exit 1
+
+# Explicit opt-in trial image for personal/non-commercial use only. The catalogue stays
+# unmodified and carries both notices; this stage is never the default final stage.
+FROM runtime AS personal-test
+RUN test "$BUILTIN_EXERCISE_MEDIA" = "1"
+COPY catalogue/media/ /usr/share/nginx/html/exercise-media/
+COPY catalogue/media/NOTICE.md /usr/share/nginx/html/legal/catalogue-media-NOTICE.md
+RUN test -f /usr/share/nginx/html/exercise-media/NOTICE.md \
+ && test -f /usr/share/nginx/html/legal/catalogue-media-NOTICE.md
+
+# Commercial is the final/default stage. It cannot accidentally inherit the personal copy.
+FROM runtime AS commercial
+RUN test "$BUILTIN_EXERCISE_MEDIA" = "0" \
+ && test ! -e /usr/share/nginx/html/exercise-media
 

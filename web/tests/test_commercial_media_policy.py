@@ -9,13 +9,22 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CommercialMediaPolicy(unittest.TestCase):
-    def test_dockerfile_excludes_catalogue_media(self):
-        instructions = (ROOT / 'web/Dockerfile').read_text().splitlines()
-        copies = [line.strip() for line in instructions if line.lstrip().upper().startswith('COPY ')]
-        self.assertFalse(any('catalogue/media' in line for line in copies),
-                         'Commercial web image still copies restricted catalogue/media')
-        self.assertIn('ENV VITE_BUILTIN_EXERCISE_MEDIA=0', instructions,
-                      'Commercial build must disable built-in media requests')
+    def test_default_final_stage_is_commercial_and_has_no_media_copy(self):
+        dockerfile = (ROOT / 'web/Dockerfile').read_text()
+        self.assertRegex(dockerfile, r'(?m)^FROM\s+runtime\s+AS\s+commercial\s*$')
+        commercial_start = dockerfile.index('FROM runtime AS commercial')
+        self.assertNotIn('\nFROM ', dockerfile[commercial_start + 1:],
+                         'commercial must be the final/default stage')
+        commercial = dockerfile.split('FROM runtime AS commercial', 1)[1]
+        self.assertNotIn('COPY catalogue/media/', commercial)
+        self.assertRegex(commercial, r'(?m)^RUN .*BUILTIN_EXERCISE_MEDIA.*0')
+
+    def test_commercial_stage_is_bound_to_disabled_build_flag(self):
+        dockerfile = (ROOT / 'web/Dockerfile').read_text()
+        self.assertIn('ARG BUILTIN_EXERCISE_MEDIA=0', dockerfile)
+        commercial = dockerfile.split('FROM runtime AS commercial', 1)[1]
+        self.assertRegex(commercial, r'test "\$BUILTIN_EXERCISE_MEDIA" = "0"')
+        self.assertIn('ENV VITE_BUILTIN_EXERCISE_MEDIA=${BUILTIN_EXERCISE_MEDIA}', dockerfile)
 
     @unittest.skipUnless(os.environ.get('OPENGYM_CANDIDATE_WEB_IMAGE'),
                          'Candidate-image verification is pending until an image is built')
