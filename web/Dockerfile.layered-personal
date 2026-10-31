@@ -1,0 +1,10 @@
+FROM johngym-web:7b96751ea
+LABEL org.opencontainers.image.revision="bf07b6ae69563d688364eb475fe66b2e2ab53672" \
+      org.opencontainers.image.version="mvp6705-stablebase" \
+      org.opencontainers.image.source="https://github.com/jhonsnake/openGym" \
+      johnprada.release-candidate="true"
+ENV BUILTIN_EXERCISE_MEDIA=1
+ENV CONTENT_SECURITY_POLICY="default-src 'self'; script-src 'self' 'sha256-NgDLN3odTt3Q3EKeAgzv5jhM+yD6SRGhh7LNrh1zjso=' 'sha256-QOiIMyX3uUAAL4LoLjmHwCvDloAJOtGnR1EPIYBliVs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self' https: http:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+COPY dist/ /usr/share/nginx/html/
+COPY legal/ /usr/share/nginx/html/legal/
+COPY media-notice/NOTICE.md /usr/share/nginx/html/exercise-media/NOTICE.md

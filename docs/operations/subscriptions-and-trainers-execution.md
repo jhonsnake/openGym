@@ -1,6 +1,24 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: API816 publicada e imagen verificada;6recorridos finales reales aprobados
+## Corte vigente: MVP desplegado y verificado
+
+Producción: https://gym.johnprada.co. El corte del2026-10-31 está completado, no pendiente.
+
+- API: `sha256:eba7f88e2481b4c6ae1769935d1f5b4e72b05e03cf6996fb2ed100f947c12974`, fuente `f74b5628a672d9e90a58b0ffecce5133eaf47ce8`.
+- Web: `sha256:92d7aca61b861ec20886ddd553233fc33c84b3a0703a061a03cea62710d190f0`, frontend funcional `bf07b6ae69563d688364eb475fe66b2e2ab53672`. Receta exacta de la capa desplegada: `web/Dockerfile.layered-personal`. Requiere el baseline7b967/ID8618 validado, dist156 y los avisos; no es una variante comercial ni una imagen descargable por digest de registro.
+- Pruebas: API816/816, frontend6705/6705, seis recorridos reales de navegador y operaciones34/34. Revisiones independientes aprobadas y restauración integralv8 ejecutada con todas las filas de22 entidades y archivos personales preservados.
+- Comprobación de producción:156 compilados y259 assets anteriores por bytes,13109 HEAD del catálogo/tamaños/MIME, avisos legales y ambos CSP completos, gzip/range206, salud pública y denegación401 de lecturas personales anónimas. Navegador público desktop/móvil: JohnGym, passkey/password, sin invitado;393px sin desbordamiento y sin errores de runtime observados. No se hizo login con credenciales reales.
+- Se preservaron IDs de usuarios, credenciales, secreto, estado personal y Caddy. Flags efectivos: managed/password/invite activados, guest desactivado. Cuenta existente1; roles/suscripciones nominales creados automáticamente0. No se infirió identidad ni habilitación pagada.
+- Respaldo cifrado/restauración NAS previo: `/mnt/pve/nas-backup/opengym-vps/20261031T151840Z`; posteriorMVP: `/mnt/pve/nas-backup/opengym-vps/20261031T152821Z`, con22 entidades comprobadas. Rollback privado y snapshot quiescido: `/opt/opengym-release-mvp816-bf07/rollback`.
+- Evidencia: `/opt/opengym-release-mvp816-bf07/deploy-result.json`, `postdeploy-http-proof.json`, `final-web-probe/summary.json`; restauración local `/home/jhonsnake/.hermes/cache/scratch/opengym-mvp/restore-api816-v8/summary.json`. Runbook/handoff: `/home/jhonsnake/hermes-stack/services/opengym/{OPERATIONS,HANDOFF}.md`.
+
+El rechazo inicial del NAS se corrigió admitiendo solamente los archivos canónicos opcionales del runtime: state-USER_ID.json,db.json.bak,audit.log yVAPID, con límites y extracción0600; siguen rechazados archivos arbitrarios, traversal, links, duplicados y sidecarsSQLite. Se preservó todo el catálogo original bajo la autorización de prueba personal/no comercial; no se concede licencia comercial. No quedan gates técnicos de este despliegue pendientes.
+
+### Histórico: seis recorridos aprobados antes de restauración y corte
+
+Nueva decisión humana en esta conversación: formulario clarify enviado, respuesta exacta «Autorizar la prueba local aislada con sudo». Alcance: exclusivamenteesta máquina, datossintéticos/recursospropiosaislados, sinaccederVPS/NAS/producción ni roles/suscripcionesreales. La prohibición histórica por falta de consentimiento se reemplaza SÓLOparaestealcance; no autoriza otros cambiosprivilegiados. Prerrequisito sudo -n true ejecutadoEXIT0. Prepararnuevoharness para API816/imageneba; nohacerreintento ciegodelhistorical5c45niablandarhashguards. Aún NOrestoreintegralPASS niMVPproducción. Disco77770752byteslibresúltimocomprobación; no borrarmedios/evidencia/snapshotsparaespacio.
+
+### Hito anterior: API816 publicada e imagen verificada;6recorridos finales reales aprobados
 
 Aceptación integrada cerrada: brandingdesktop/móvil yaltadesktop/móvilv21,clínicadesktop/móvilv22:6proyectosúnicosGREEN/EXIT0. Todos usan la imagen API816sha256:eba7f88e2481b4c6ae1769935d1f5b4e72b05e03cf6996fb2ed100f947c12974, revisión pública f74b5628a672d9e90a58b0ffecce5133eaf47ce8. V21→V22únicamentecambia frontend/e2e/t10-clinical.spec.js: runtimeproducciónidéntico,21308hashesv22intactos,cleanupcontenedor/red/temp/proxyrealTRUE. Cohorteverificada ydeduplicadaen coordinator-six-final-browser-projects-verified.json; evidenciadurablereport/clínica/adjudicación/summary/preflighten /home/jhonsnake/.local/state/opengym-mvp/evidence/final-six-browser-projects/manifest.json(5archivos).
 
