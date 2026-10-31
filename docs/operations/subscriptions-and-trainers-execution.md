@@ -1,17 +1,26 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## HOLD web vigente: segundo hotfix de textos JohnGym
+## Hotfix de textos en producción confirmado; hold web retirado
 
-John pidió retirar los textos visibles openGym de la interfaz y conservar JohnGym en español e inglés. La coordinación prepara el hotfix aislado en /home/jhonsnake/openGym-branding-hotfix, sólo frontend visible; mantiene licencias/avisos, rutas/IDs internos, datos, API y PASSWORD_LOGIN=1. No hay despliegue productivo de esta sesión en curso: el hito backend publicado en7fefdc74a933d412f42da49696ed7a41e716c75a es sólo fuente, con803testsAPI y revisión crítica aprobados.
+John confirmó el despliegue externo: funcional7b96751ea16dcebccc072da0ce63ad8b52837244, documentacióneef7ece5ab9ed746f0d8636bad36b6b9f9bd0dc6, rama branding/johngym-stable-hotfix. Handoff leído: /home/jhonsnake/openGym-branding-hotfix/TEXT-BRANDING.md. Baseline web informado: johngym-web:7b96751ea, imagen sha256:8618d956efa737a4807edc8842dd02a6f99b852d4130984535de745f40a9939f, sobre la imagen anterior para conservar chunks/media. API no reiniciada según coordinación; PASSWORD_LOGIN=1, invitaciones y Guest desactivado permanecen.
 
-Bloquear despliegue web y rollout MVP combinado hasta confirmación explícita de cierre. El trabajo local, builds y QA continúan. Al cerrar: leer handoff/base/commit/delta y nuevo baseline servido; integrar los textos por rutas y hashes desde la base verdadera, sin cherry-pick ciego ni reemplazar componentes MVP con archivos del hotfix estable. No retirar licencias/avisos ni cambiar identificadores internos. PASSWORD_LOGIN=1 e invitaciones/suscripciones siguen vigentes. Este hold web nuevo es distinto del hold breve de contraseña ya retirado.
+Se obtuvo la rama remota y se verificó públicamente HTML200: watchdog con sha256-QOiIMyX3uUAAL4LoLjmHwCvDloAJOtGnR1EPIYBliVs= y CSP servido que contiene ese hash. Configuración pública confirma password_login=true/invite_only=true/allow_guest=false. Hold web retirado explícitamente. Esto NO levanta los gates MVP ni significa que los textos ya estén integrados en su árbol.
 
+Integración pendiente por delta/base/hash, sin cherry-pick ciego sobre el MVP sucio: allowlist visible-brand-source-keys.js después de locale/plural y ANTES de interpolar; conservar URLs, rutas/IDs y valores de usuario. Ocultar donaciones upstream sólo en web, mantener controles nativos, licencias y source del MVP. Integrar index/watchdog junto a DockerCSP, derivando/verificando hashes de los inline scripts finales. No copiar branding-web.Dockerfile sobre la receta personal MVP ni perder sus funciones, todos los medios o PASSWORD_LOGIN1. El corrector de auth local sigue activo; preparar texto aislado y aplicar tras liberar sus archivos, no cambiar su árbol durante pruebas.
 
 ## Credenciales productivas: PASSWORD_LOGIN=1 verificado y obligatorio en MVP
 
 John confirmó la habilitación de usuario/contraseña junto con passkeys e invitaciones y levantó el hold breve. Se verificó públicamente /api/config: password_login=true, invite_only=true, allow_guest=false, HTTP200; health ok=true/users=1/writable=true. No se probó aquí un envío real de contraseña ni registro. Cambio externo documentado en PASSWORD-LOGIN.md, commit b408c1b659f1ebe33db0d76a579cef71a446fa55 de hermes-stack, remoto comprobado; API estable sin cambio de imagen y datos/cuentas intactos según la coordinación.
 
 La futura entrega MVP debe preservar PASSWORD_LOGIN=1 y ambos métodos de autenticación, sin saltar invitaciones, consentimiento, roles o vigencia. La plantilla local ya tiene1; contrato de despliegue reforzado y suite operativa23 PASS. Los gates funcionales, privacidad, fuentes y restore siguen pendientes independientemente del hold retirado.
+
+## Continuación local: bloqueo de invitación detectado y texto preparado por delta
+
+El T9 real del candidato mantuvo M0 verde pero se detuvo en registro M1: la UI exigía el código tradicional pese al token válido de entrenador y la rama Password no lo transportaba. La corrección local de ambos métodos está en ejecución, preservando controles legacy y sin cambios backend. No se consideran probadas las fases que quedaron detrás del bloqueo.
+
+La integración del hotfix de textos se prepara en un worktree aislado, desde la base funcional externa3032c21401be1e7470993e77b0d9b612585fa126 y el delta7b96751ea16dcebccc072da0ce63ad8b52837244. Conserva overlay MVP, allowlist antes de interpolación, valores/URLs/paths y donaciones sólo nativas; index y CSP se integran juntos. Se aplicará al Root sólo después de liberar al corrector de auth y comprobar todos los hashes/base/conflictos. Restore real de fixture sintética en Docker también está en ejecución, sin producción ni transporte NAS.
+
+El hold externo ya se retiró con prueba pública del watchdog QOi y autenticación1/inviteOnly/GuestOff. Configuración local de despliegue actualizada a imagen web7b96751ea/8618, validada sin recrear servicios;23testsOps PASS. Mantener PASSWORD_LOGIN1, todos los medios personales y los gates restantes.
 
 ## Publicación backend y resultado frontend reconciliados
 
