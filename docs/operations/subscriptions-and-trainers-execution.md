@@ -1,6 +1,14 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: frontend publicado; HISTORY corregido con prueba real, revisión y API completa pendientes
+## Corte vigente: frontend publicado; revisión HISTORY exige correcciones acotadas
+
+La revisión de9archivos terminó NO aprobada, sin hallazgos de seguridad ni filtración reproducida; hashes de los9archivos siguen idénticos. Bloqueos reales: IHC001, prueba adyacente mantiene el modelo anterior y espera0grants almacenados al aceptar pendiente (revisión reprodujo8PASS/1FAIL); IHC005, replaceGrants toma el primer snapshot dentro de BEGIN IMMEDIATE y debe tomarlo después del preflight fresco y antes del commit, según contrato144. Atomicidad actual y privacidad se conservan, pero el orden/tiempo del lock requiere corrección. Evidencia adicional a integrar como regresión durable: IHC002 aceptación/confirmación con tiempos y contenido distintos (el coordinador YA lo probó porHTTP/SQLite); IHC003 rev/wid real/null/unreadable con rollback; IHC004 grants antiguos sin copia jamás se reconstruyen. No ampliar permisos ni inventar política.
+
+IMPORTANTE: todavía está pendiente consumir la API completa proc_ccc2c8ffbd9d sobre192 fuentes selladas. NO escribir API ni arrancar un corrector mientras ese gate siga activo; no matarlo ni reiniciarlo. El brief de corrección está PREPARADO EN HOLD y NO lanzado: /home/jhonsnake/.hermes/cache/scratch/opengym-mvp/initial-history-consent-corrections-brief.txt. Tras salida real y verificación de los192hashes, guardar el resultado y reemplazar HOLD por EXECUTE NOW antes del despacho. Sólo training y pruebas afectadas; service únicamente si necesita reutilizar el preflight. Revisión posterior limitada al delta de estas5observaciones y evidencia nueva.
+
+Últimos commits remotos verificados: frontend funcional bf07b6ae69563d688364eb475fe66b2e2ab53672; ajuste QA de rango histórico y ledger3992605c3030bc2cc0b3ac9e837484a181efdc48; handoff9d1e333bfbebccd01ac17ea14f9d0f350ce1672d. Código API aún sin publicar. La notificación tardía review-fix2/proc_105f21ab4184 es históricaT3/180fuentes, no el arreglo actual y no reinicia tareas resueltas.
+
+### Histórico del corte entrega inicial y gates en ejecución
 
 Fuente funcional frontend publicada en bf07b6ae69563d688364eb475fe66b2e2ab53672, rama feat/subscriptions-human-trainers; remoto leído y coincidente. Acceso anónimo HTTP200 a managed-bridge.js/index.html/webDocker del commit, con SHA256 idénticos. Suite completa20: 6705/6705 aprobadas,565archivos,EXIT0,21308hashes intactos. Handoff anterior publicado c7bf7215eed339a489c8407c9faa6f970b6bfa7f. No despliegue MVP ni roles/suscripciones reales.
 
