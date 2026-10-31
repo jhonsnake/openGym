@@ -28,9 +28,27 @@ async function startServer(t) {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN, RP_ID: 'localhost' }
   });
-  const h = { api: '', log: '' };
-  child.stdout.on('data', d => h.log += d);
-  child.stderr.on('data', d => h.log += d);
+  const waiters = [];
+  const h = {
+    api: '', log: '',
+    waitForLog(prefix) {
+      const found = () => h.log.split('\n').find(line => line.startsWith(prefix));
+      const line = found(); if (line) return Promise.resolve(line);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`missing log event ${prefix}: ${h.log}`)), 1000);
+        waiters.push({ prefix, resolve: value => { clearTimeout(timer); resolve(value); } });
+      });
+    }
+  };
+  const appendLog = d => {
+    h.log += d;
+    for (let index = waiters.length - 1; index >= 0; index -= 1) {
+      const line = h.log.split('\n').find(candidate => candidate.startsWith(waiters[index].prefix));
+      if (line) waiters.splice(index, 1)[0].resolve(line);
+    }
+  };
+  child.stdout.on('data', appendLog);
+  child.stderr.on('data', appendLog);
   t.after(() => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
   h.api = `http://127.0.0.1:${await boundPort(child, () => h.log)}`;
   return h;
@@ -42,7 +60,7 @@ test('a write from the LAN address names ORIGIN in the log and the answer', asyn
   const r = await post(h, '/api/login/options', {}, { Origin: 'http://10.11.0.4:3030' });
   assert.equal(r.status, 403);
   assert.deepEqual(await r.json(), { error: 'cross-origin request refused', code: 'origin-mismatch', expected: ORIGIN });
-  const line = h.log.split('\n').find(l => l.startsWith('refused cross-origin'));
+  const line = await h.waitForLog('refused cross-origin');
   assert.match(line, /origin="http:\/\/10\.11\.0\.4:3030" expected=http:\/\/localhost:8080/);
   assert.match(line, /set ORIGIN=http:\/\/10\.11\.0\.4:3030 and RP_ID=10\.11\.0\.4 on the api service/);
 });
@@ -52,7 +70,7 @@ test('a page on another site gets the same refusal, and the log does not advise 
   const r = await post(h, '/api/login/options', {}, { Origin: 'https://evil.test', 'Sec-Fetch-Site': 'cross-site' });
   assert.equal(r.status, 403);
   assert.equal((await r.json()).code, 'origin-mismatch');
-  const line = h.log.split('\n').find(l => l.startsWith('refused cross-origin'));
+  const line = await h.waitForLog('refused cross-origin');
   assert.doesNotMatch(line, /set ORIGIN/);
 });
 

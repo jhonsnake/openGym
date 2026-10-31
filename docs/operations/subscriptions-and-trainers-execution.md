@@ -1,5 +1,27 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## Credenciales productivas: PASSWORD_LOGIN=1 verificado y obligatorio en MVP
+
+John confirmó la habilitación de usuario/contraseña junto con passkeys e invitaciones y levantó el hold breve. Se verificó públicamente /api/config: password_login=true, invite_only=true, allow_guest=false, HTTP200; health ok=true/users=1/writable=true. No se probó aquí un envío real de contraseña ni registro. Cambio externo documentado en PASSWORD-LOGIN.md, commit b408c1b659f1ebe33db0d76a579cef71a446fa55 de hermes-stack, remoto comprobado; API estable sin cambio de imagen y datos/cuentas intactos según la coordinación.
+
+La futura entrega MVP debe preservar PASSWORD_LOGIN=1 y ambos métodos de autenticación, sin saltar invitaciones, consentimiento, roles o vigencia. La plantilla local ya tiene1; contrato de despliegue reforzado y suite operativa23 PASS. Los gates funcionales, privacidad, fuentes y restore siguen pendientes independientemente del hold retirado.
+
+## Hito backend verificado: 803 pruebas y revisión crítica aprobadas
+
+La suite API posterior a ambos arreglos terminó: 803 pruebas aprobadas, 0 fallos, 0 saltos y exit 0. El contenido Root coincide con los 188 archivos API del snapshot consent-reviewed-v2. Revisión crítica independiente aprobada, sin errores ni concerns; el HIGH de grants idénticos y los filtros scopes quedan cerrados. El scan previo a publicación no encontró atribuciones nuevas; los candidatos de credenciales eran únicamente fixtures aisladas de test, no valores productivos.
+
+Se conserva la evidencia real de recuperación, subconjuntos y privacidad: tokens autoritativos, ventana original, omisiones explícitas, diff de permisos sin recortar categorías intactas, gap privado excluido, datos nuevos visibles y HISTORY explícito sin ampliación automática. Migración esquema 5 y metadata mínima cerrada verificadas. Los 23 tests operativos actuales incluyen el contrato de PASSWORD_LOGIN=1 y sus canaries; helper real empaquetado pasó WAL ±SHM, cursor, 22 tablas, integridad y rechazo de esquema futuro.
+
+Este hito permite publicar el backend probado, NO desplegar ni aceptar el MVP completo. La nueva suite frontend congelada, T9 con imagen corregida y ambos métodos de acceso, journeys clínicos, restore integral, imagen web personal con TODOS los medios y activación nominal siguen bajo sus gates. La producción sólo recibió la habilitación externa de contraseña documentada arriba; no se alteraron aquí cuentas, roles o suscripciones reales.
+
+## Revisión de las correcciones aprobada; validación integral posterior pendiente
+
+La revisión independiente del snapshot consent-reviewed-v2 aprobó ambos arreglos, sin errores ni concerns: grants idénticos conservan ID/corte/versión y snapshot HISTORY, los cambios reales reciben un periodo nuevo y el paginador acepta filtros autorizados sin relajar ACL ni validación de otras rutas. El probe HTTP conserva ejecución1→1 y peso1→1, excluye el gap privado y permite su reenvío sólo mediante HISTORY explícito;33pruebas independientes de consentimiento y9de ámbitos aprobadas. Los 189 archivos del snapshot coincidieron por hash antes/después.
+
+Nueva suite API completa y nueva suite frontend sobre1229fuentes congeladas en ejecución. T9 continúa sobre imagen nueva sha256:5c455f924dfb05d92d0b1200081baa3ef0033928f5b1ebad7f24434ceec8a933, ya comprobada con helper empaquetado real y WAL±SHM/esquema5/22tablas/integridad/futuro. Prueba ambos métodos de autenticación en fixture con PASSWORD_LOGIN=1, manteniendo invitaciones y bloqueo de entrenamiento sin vigencia. No usar la imagen antigua ni proclamar passkeys/contraseña comprobadas por mostrar sólo controles.
+
+Producción sólo recibió el cambio externo de autenticación documentado arriba, sin despliegue MVP. Los gates de browser/journeys clínicos, restore, fuente pública, todos los medios personales y activación nominal siguen abiertos. Los apartados inferiores son históricos frente a este corte.
+
 ## Suite API 801 PASS; dos correcciones de integración pendientes
 
 La nueva suite API completa terminó con 801 pruebas aprobadas, 0 fallos y 0 saltos, exit 0. La revisión crítica no aprobó ese snapshot: aunque cerró la brecha WEIGHT original, subconjuntos, migración y DTOs, detectó que replaceGrants también reinicia los grants idénticos y sus cortes. Agregar HISTORY conservando EXECUTION/WEIGHT hizo pasar sus lecturas de 1 registro a 0. No borra los registros propios, pero recorta inesperadamente acceso consentido. Corregir mediante diff transaccional por identidad exacta, conservando IDs, cortes y snapshots de categorías sin cambios; nueva concesión tras retirada debe seguir protegiendo el intervalo privado.

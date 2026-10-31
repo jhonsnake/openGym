@@ -186,8 +186,7 @@ paths:
           description: Committed, scoped authority readback; never a personal profile or training history.
           content:
             application/json:
-              schema:
-                type: object
+              schema: { $ref: '#/components/schemas/AccessSnapshot' }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -203,8 +202,7 @@ paths:
           description: Committed, scoped authority readback; never a personal profile or training history.
           content:
             application/json:
-              schema:
-                type: object
+              schema: { $ref: '#/components/schemas/OperationsUsersReadback' }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -215,117 +213,51 @@ paths:
     post:
       tags: [admin]
       summary: Replace another active account operational roles as an existing active administrator.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RolesMutation' }
       responses:
         '200':
           description: Committed, scoped authority readback; never a personal profile or training history.
           content:
             application/json:
-              schema:
-                type: object
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '503':
-          description: Authority unavailable; fail closed.
-        '400':
-          description: Invalid closed payload or unsupported transition.
-        '409':
-          description: Stale aggregate version or operation tuple mismatch.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-              - operationId
-              - expectedVersion
-              - payload
-              properties:
-                operationId: &id001
-                  type: string
-                  format: uuid
-                expectedVersion:
-                  type: integer
-                  minimum: 0
-                payload:
-                  type: object
-                  additionalProperties: false
-                  required:
-                  - accountId
-                  - roles
-                  - reason
-                  properties:
-                    accountId: &id002
-                      type: string
-                      minLength: 1
-                      maxLength: 128
-                    roles:
-                      type: array
-                      uniqueItems: true
-                      items:
-                        type: string
-                        enum:
-                        - CLIENT
-                        - TRAINER
-                        - COORDINATOR
-                    reason: &id003
-                      type: string
-                      minLength: 1
-                      maxLength: 280
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }
+        '403': { $ref: '#/components/responses/AuthorityForbidden' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
+        '400': { $ref: '#/components/responses/AuthorityValidation' }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' }
   /api/admin/operations/scopes:
+    get:
+      tags: [admin]
+      summary: Existing administrator reads an optional coordinator/client scope pair with its real SCOPE token, including zero for an authorized missing pair.
+      parameters: [{ name: coordinatorId, in: query, schema: { type: string } }, { name: clientId, in: query, schema: { type: string } }, { $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Scope metadata, content: { application/json: { schema: { $ref: '#/components/schemas/ScopePairsReadback' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
     post:
       tags: [admin]
       summary: Assign or remove an explicit coordinator/client pair without self assignment or global scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScopeMutation' }
       responses:
         '200':
           description: Committed, scoped authority readback; never a personal profile or training history.
           content:
             application/json:
-              schema:
-                type: object
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '503':
-          description: Authority unavailable; fail closed.
-        '400':
-          description: Invalid closed payload or unsupported transition.
-        '409':
-          description: Stale aggregate version or operation tuple mismatch.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-              - operationId
-              - expectedVersion
-              - payload
-              properties:
-                operationId: *id001
-                expectedVersion:
-                  type: integer
-                  minimum: 0
-                payload:
-                  type: object
-                  additionalProperties: false
-                  required:
-                  - coordinatorId
-                  - clientId
-                  - assigned
-                  - reason
-                  properties:
-                    coordinatorId: *id002
-                    clientId: *id002
-                    assigned:
-                      type: boolean
-                    reason: *id003
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '400': { $ref: '#/components/responses/AuthorityValidation' }
+        '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }
+        '403': { $ref: '#/components/responses/AuthorityForbidden' }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
   /api/health:
     get:
       tags: [meta]
@@ -513,6 +445,11 @@ paths:
                   description: >-
                     Invite code, required (and validated) only when the instance
                     runs with INVITE_ONLY. Compared case-insensitively.
+                inviteToken:
+                  type: string
+                  description: >-
+                    Managed invitation token, sent conditionally by the new registration
+                    flow. It is never placed in a URL; legacy `code` remains supported.
             example: { name: "Ada", code: "3F9C21A07B54D688" }
       responses:
         '200':
@@ -564,6 +501,9 @@ paths:
                   description: The challenge id from /api/register/options.
                 credential:
                   $ref: '#/components/schemas/WebAuthnRegistrationCredential'
+                inviteToken:
+                  type: string
+                  description: Managed invitation token carried through the existing ceremony when supplied.
       responses:
         '200':
           description: Registered and signed in. The session cookie is set.
@@ -970,6 +910,7 @@ paths:
                 password: { type: string, minLength: 10, maxLength: 256 }
                 code: { type: string, description: Invite code (INVITE_ONLY only). }
                 email: { type: string, maxLength: 254, description: Optional sign-in e-mail. }
+                inviteToken: { type: string, description: Managed invitation token; sent conditionally and never in a URL. }
             example: { name: "Ada", password: "correct horse battery staple", code: "3F9C21A07B54D688" }
       responses:
         '200':
@@ -988,7 +929,8 @@ paths:
           description: >-
             The password breaks the policy with `too-short` (under 10 characters), `too-long`
             (over 256) or `too-common`; a field is `missing`; or `email-invalid`: the
-            `email` given is not an e-mail address.
+            `email` given is not an e-mail address. A managed invitation can also return
+            `invite-invalid` when its token is absent, expired, revoked or otherwise unavailable.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3440,6 +3382,250 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/trainer/invitations:
+    get:
+      tags: [admin]
+      summary: Calling trainer's invitation metadata and INVITE_SET version; never returns invitation tokens or recipient identifiers.
+      parameters: [{ $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Invitation metadata, content: { application/json: { schema: { $ref: '#/components/schemas/TrainerInvitationsReadback' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+    post:
+      tags: [admin]
+      summary: Create a one-time, seven-day trainer invitation. The plaintext token is returned only on the fresh response.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationCreateMutation' } } } }
+      responses: { '200': { description: Invitation receipt, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' } }
+  /api/trainer/invitations/replace:
+    post:
+      tags: [admin]
+      summary: Atomically revoke the issuing trainer's pending invitation and create a fresh one; its plaintext replacement token is fresh-response-only.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationReplaceMutation' } } } }
+      responses: { '200': { description: Replacement invitation receipt, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/invitations/preview:
+    post:
+      tags: [auth]
+      summary: Public minimum invitation preview from a token in the JSON body; never consumes it.
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InvitePreviewInput' } } } }
+      responses: { '200': { description: Minimum trainer purpose and categories, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationPreview' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '404': { $ref: '#/components/responses/InvitationInvalid' }, '410': { $ref: '#/components/responses/InvitationExpired' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' } }
+  /api/invitations/accept:
+    post:
+      tags: [auth]
+      summary: Authenticated client acceptance; the only invitation-consuming action.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationAcceptMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/InvitationInvalid' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '410': { $ref: '#/components/responses/InvitationExpired' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' } }
+  /api/invitations/reject:
+    post:
+      tags: [auth]
+      summary: Authenticated prospective client rejects an invitation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationRejectMutation' } } } }
+      responses: { '200': { description: Invitation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/InvitationInvalid' }, '410': { $ref: '#/components/responses/InvitationExpired' } }
+  /api/trainer/invitations/revoke:
+    post:
+      tags: [admin]
+      summary: Issuing trainer revokes a pending invitation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InvitationRevokeMutation' } } } }
+      responses: { '200': { description: Invitation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/trainer/relations/confirm:
+    post:
+      tags: [admin]
+      summary: Issuing trainer confirms an unknown-account relation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationConfirmMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/client/relations/revoke:
+    post:
+      tags: [auth]
+      summary: Client ends their own relation and withdraws shared access.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/client/relations:
+    get:
+      tags: [auth]
+      summary: Authenticated client's minimum own relation and consent-transition metadata, including ended relations for withdrawal; no plan or health data.
+      parameters: [{ $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Own relation metadata, content: { application/json: { schema: { $ref: '#/components/schemas/ClientRelationsReadback' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/relations/suspend:
+    post:
+      tags: [admin]
+      summary: Responsible trainer suspends a relation and closes windows/grants.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/trainer/relations/end:
+    post:
+      tags: [admin]
+      summary: Responsible trainer ends a relation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/trainer/relations/reactivate-request:
+    post:
+      tags: [admin]
+      summary: Responsible trainer requests client-approved reactivation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/client/relations/reactivate-accept:
+    post:
+      tags: [auth]
+      summary: Client accepts reactivation, creating a new access window with no restored grants.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/admin/relations/suspend:
+    post:
+      tags: [admin]
+      summary: Existing administrator suspends a relation with an explicit reason.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/admin/relations/end:
+    post:
+      tags: [admin]
+      summary: Existing administrator ends a relation with an explicit reason.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/admin/relations/reactivate-request:
+    post:
+      tags: [admin]
+      summary: Existing administrator requests client-approved reactivation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RelationChangeMutation' } } } }
+      responses: { '200': { description: Relation readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' } }
+  /api/client/relations/grants/replace:
+    post:
+      tags: [auth]
+      summary: Client replaces active sharing grants. HISTORY projection is intentionally not yet available.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GrantReplaceMutation' } } } }
+      responses: { '200': { description: Relation grant readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' } }
+  /api/client/relations/grants/revoke:
+    post:
+      tags: [auth]
+      summary: Client withdraws one sharing category, including when entitlement has expired.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GrantRevokeMutation' } } } }
+      responses: { '200': { description: Relation grant readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' } }
+  /api/trainer/portfolio:
+    get:
+      tags: [admin]
+      summary: Entitled active clients in the calling trainer portfolio only.
+      parameters: [{ $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Minimum cards, content: { application/json: { schema: { $ref: '#/components/schemas/PortfolioReadback' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' } }
+  /api/trainer/relations:
+    get:
+      tags: [admin]
+      summary: Calling trainer relationship-management metadata only, without health or training data.
+      parameters: [{ $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Scoped relation metadata, content: { application/json: { schema: { $ref: '#/components/schemas/TrainerRelationsReadback' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' } }
+  /api/admin/commercial/operations/confirm:
+    post:
+      tags: [admin]
+      summary: Scoped coordinator records a manual external commercial operation and persists its interval.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CommercialConfirmMutation' } } } }
+      responses: { '200': { description: Subscription interval readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' }, '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' } }
+  /api/admin/commercial/clients:
+    get:
+      tags: [admin]
+      summary: Scoped coordinator commercial identity and entitlement minimum, never training data.
+      parameters: [{ $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Scoped commercial clients, content: { application/json: { schema: { $ref: '#/components/schemas/CommercialClientsReadback' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' } }
+  /api/trainer/plans/publish:
+    post:
+      tags: [admin]
+      summary: Publish an immutable individual plan version for the consenting entitled client.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingPlanMutation' } } } }
+      responses: { '200': { description: Immutable plan receipt, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingPlanReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/goals/publish:
+    post:
+      tags: [admin]
+      summary: Publish immutable goals independently of plan versions.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingGoalsMutation' } } } }
+      responses: { '200': { description: Immutable goal receipt, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingGoalReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/plan/current:
+    get:
+      tags: [data]
+      summary: Read only the caller's current plan and immutable goal reference.
+      responses: { '200': { description: Own plan readback, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingCurrentReadback' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/exports:
+    post:
+      tags: [data]
+      summary: Request an owner-only, metadata-ready export without materializing a file.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExportMutation' } } } }
+      responses: { '200': { description: READY export job receipt, content: { application/json: { schema: { $ref: '#/components/schemas/ExportReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/exports/{jobId}:
+    get:
+      tags: [data]
+      summary: Download an owner-authorized export document generated at request time.
+      parameters: [{ name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv4' } }]
+      responses: { '200': { description: Owned export JSON, headers: { Content-Disposition: { schema: { const: 'attachment; filename="opengym-owned-export.json"' } } }, content: { application/json: { schema: { $ref: '#/components/schemas/OwnedExportDocument' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/deletion-requests:
+    post:
+      tags: [data]
+      summary: Record a request only; this endpoint never removes account, state, or files.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequestMutation' } } } }
+      responses: { '200': { description: REQUESTED deletion receipt, content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequestReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/plans/current:
+    get:
+      tags: [admin]
+      summary: Responsible trainer reads the latest immutable plan under current PLAN consent.
+      parameters: [{ name: relationId, in: query, required: true, schema: { $ref: '#/components/schemas/UUIDv4' } }]
+      responses: { '200': { description: Latest plan or null with PLAN_SET token, content: { application/json: { schema: { $ref: '#/components/schemas/TrainerCurrentPlanReadback' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/goals/current:
+    get:
+      tags: [admin]
+      summary: Responsible trainer reads the latest independently-published goals under PLAN consent.
+      parameters: [{ name: relationId, in: query, required: true, schema: { $ref: '#/components/schemas/UUIDv4' } }]
+      responses: { '200': { description: Latest goals or null with GOAL_SET token, content: { application/json: { schema: { $ref: '#/components/schemas/TrainerCurrentGoalsReadback' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/sessions/current:
+    get:
+      tags: [data]
+      summary: Recover the caller's immutable OPEN snapshot, or a minimal owner-only close escape when its original authority is stale.
+      parameters: [{ name: X-OpenGym-Contract-Version, in: header, required: true, schema: { const: '1' } }]
+      responses: { '200': { description: Open session or null with the current session-set token, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingCurrentSessionReadback' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '426': { $ref: '#/components/responses/AuthorityUnsupportedClient' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/sessions/start:
+    post:
+      tags: [data]
+      summary: Start one owner session from an exact immutable plan snapshot.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingSessionStartMutation' } } } }
+      responses: { '200': { description: Snapshot receipt, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingSessionStartReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/sessions/finish:
+    post:
+      tags: [data]
+      summary: Persist actuals once without changing prescribed snapshot targets.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingFinishMutation' } } } }
+      responses: { '200': { description: Execution receipt, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingFinishReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/sessions/abandon:
+    post:
+      tags: [data]
+      summary: Owner-only explicit close of a stale OPEN session; never fabricates an execution.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingAbandonMutation' } } } }
+      responses: { '200': { description: Closed-without-execution receipt, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingAbandonReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/executions:
+    get:
+      tags: [data]
+      summary: Paginated own SQLite actuals.
+      parameters: [{ $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Own actuals page, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingExecutionPage' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/executions:
+    get:
+      tags: [admin]
+      summary: Actuals for a responsible trainer under current EXECUTION consent.
+      parameters: [{ name: relationId, in: query, required: true, schema: { $ref: '#/components/schemas/UUIDv4' } }, { $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Trainer actuals page, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingExecutionPage' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/client/bodyweight:
+    get:
+      tags: [data]
+      summary: Read the caller's legacy-plus-SQLite bodyweight projection.
+      responses: { '200': { description: Own bodyweight entries, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingBodyweightReadback' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+    post:
+      tags: [data]
+      summary: Add an immutable owner bodyweight measurement and server receipt time.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingBodyweightMutation' } } } }
+      responses: { '200': { description: Bodyweight receipt, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingBodyweightReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/bodyweight:
+    get:
+      tags: [admin]
+      summary: Server-received bodyweight under current WEIGHT consent only.
+      parameters: [{ name: relationId, in: query, required: true, schema: { $ref: '#/components/schemas/UUIDv4' } }, { $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Trainer bodyweight page, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingWeightPage' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+  /api/trainer/history:
+    get:
+      tags: [admin]
+      summary: Immutable allowlisted history share under current HISTORY consent; WEIGHT is separately redacted.
+      parameters: [{ name: relationId, in: query, required: true, schema: { $ref: '#/components/schemas/UUIDv4' } }, { name: grantId, in: query, description: Exact active HISTORY grant. Omit only when exactly one active HISTORY grant exists; otherwise the request fails closed with 400., schema: { $ref: '#/components/schemas/UUIDv4' } }, { $ref: '#/components/parameters/PageLimit' }, { $ref: '#/components/parameters/PageCursor' }]
+      responses: { '200': { description: Trainer history page, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingHistoryPage' } } } }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '503': { $ref: '#/components/responses/AuthorityUnavailable' } }
+
 components:
   securitySchemes:
     cookieAuth:
@@ -3460,6 +3646,18 @@ components:
         the paired mobile app (obtained from `POST /api/pair/redeem`). Bearer requests
         skip the CSRF origin check; a browser never attaches this header on its own.
 
+  parameters:
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 512 }
+
   responses:
     Unauthorized:
       description: No session, expired/revoked session, or a disabled account.
@@ -3473,6 +3671,36 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
           example: { error: "forbidden" }
+    AuthorityUnauthenticated:
+      description: No authenticated active identity.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityForbidden:
+      description: Authenticated identity lacks the required role, scope, relation or entitlement.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityValidation:
+      description: Invalid closed payload or existing validation failure.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityUnprocessable:
+      description: Valid JSON that cannot be applied under the approved domain rules.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityConflict:
+      description: Stale version or operation tuple conflict.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityNotFound:
+      description: Foreign or missing domain entity remains undiscoverable.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityUnavailable:
+      description: Authority unavailable; fail closed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    AuthorityUnsupportedClient:
+      description: Protected resource cannot be used by this client version after authorization.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    InvitationInvalid:
+      description: Uniform unavailable invitation response; no target identity is disclosed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
+    InvitationExpired:
+      description: Known invitation token has expired.
+      content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } }
     CoachOff:
       description: >-
         The Coach is not set up on this instance (switched off, or no provider connected).
@@ -3586,6 +3814,805 @@ components:
           example: { error: "that code is wrong, used or expired", code: "link-invalid" }
 
   schemas:
+    ExistingAccountId:
+      type: string
+      minLength: 1
+      maxLength: 128
+      description: Existing literal account identifier; it is not a UUID and is not normalized.
+    UUIDv4:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+    SafeVersion:
+      type: integer
+      minimum: 0
+      description: Safe non-negative aggregate version; zero means no aggregate has been published.
+    IsoUtc:
+      type: string
+      format: date-time
+      pattern: 'Z$'
+    Reason:
+      type: string
+      minLength: 1
+      maxLength: 280
+    Reference:
+      type: string
+      minLength: 1
+      maxLength: 160
+    OperationalRole:
+      type: string
+      enum: [CLIENT, TRAINER, COORDINATOR]
+    GrantInput:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [PLAN, EXECUTION, WEIGHT] }
+            startUtc: { $ref: '#/components/schemas/IsoUtc' }
+            endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }
+        - type: object
+          additionalProperties: false
+          required: [kind, startUtc, endExclusiveUtc]
+          properties:
+            kind: { type: string, const: HISTORY }
+            startUtc: { $ref: '#/components/schemas/IsoUtc' }
+            endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }
+            includeWeight: { type: boolean }
+      discriminator: { propertyName: kind }
+    MutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, payload]
+      properties:
+        operationId: { $ref: '#/components/schemas/UUIDv4' }
+        expectedVersion: { $ref: '#/components/schemas/SafeVersion' }
+        payload: { type: object }
+    TrainingLoad:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties: { kind: { const: BODY_WEIGHT } }
+        - type: object
+          additionalProperties: false
+          required: [kind, kg]
+          properties: { kind: { enum: [EXTERNAL, ASSISTANCE] }, kg: { type: number, minimum: 0, maximum: 2000 } }
+    TrainingEffort:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, value]
+          properties: { kind: { const: RIR }, value: { type: number, multipleOf: 0.5, minimum: 0, maximum: 10 } }
+        - type: object
+          additionalProperties: false
+          required: [kind, value]
+          properties: { kind: { const: RPE }, value: { type: number, multipleOf: 0.5, minimum: 6, maximum: 10 } }
+    TrainingRepsTarget:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [exact]
+          properties: { exact: { type: integer, minimum: 1, maximum: 1000 } }
+        - type: object
+          additionalProperties: false
+          required: [min, max]
+          properties: { min: { type: integer, minimum: 1, maximum: 1000 }, max: { type: integer, minimum: 1, maximum: 1000 } }
+    TrainingPlanTarget:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [reps]
+          properties: { reps: { $ref: '#/components/schemas/TrainingRepsTarget' }, load: { $ref: '#/components/schemas/TrainingLoad' }, effort: { $ref: '#/components/schemas/TrainingEffort' } }
+        - type: object
+          additionalProperties: false
+          required: [seconds]
+          properties: { seconds: { type: integer, minimum: 1, maximum: 21600 } }
+    TrainingPlanExercise:
+      type: object
+      additionalProperties: false
+      required: [exerciseId, mode, sets, commonTarget, setOverrides]
+      properties:
+        entryId: { $ref: '#/components/schemas/UUIDv4' }
+        exerciseId: { type: string, minLength: 1, maxLength: 128 }
+        mode: { enum: [reps, time] }
+        sets: { type: integer, minimum: 1, maximum: 50 }
+        restSeconds: { type: integer, minimum: 0, maximum: 21600 }
+        commonTarget: { $ref: '#/components/schemas/TrainingPlanTarget' }
+        setOverrides: { type: object, additionalProperties: { $ref: '#/components/schemas/TrainingPlanTarget' } }
+    TrainingGoal:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [label, kind, targetSessionsPerWeek]
+          properties: { label: { type: string, minLength: 1, maxLength: 120 }, kind: { const: CONSISTENCY }, targetSessionsPerWeek: { type: integer, minimum: 1, maximum: 365 }, dueDatePanama: { type: string, format: date } }
+        - type: object
+          additionalProperties: false
+          required: [label, kind, targetWeight, unit]
+          properties: { label: { type: string, minLength: 1, maxLength: 120 }, kind: { const: BODY_WEIGHT }, targetWeight: { type: number, exclusiveMinimum: 0, maximum: 500 }, unit: { enum: [KG, LB] }, dueDatePanama: { type: string, format: date } }
+        - type: object
+          additionalProperties: false
+          required: [label, kind, exerciseId, targetLoad, targetReps]
+          properties: { label: { type: string, minLength: 1, maxLength: 120 }, kind: { const: PERFORMANCE }, exerciseId: { type: string, minLength: 1, maxLength: 128 }, targetLoad: { $ref: '#/components/schemas/TrainingLoad' }, targetReps: { type: integer, minimum: 1, maximum: 1000 }, dueDatePanama: { type: string, format: date } }
+      discriminator: { propertyName: kind }
+    TrainingExecutionSet:
+      type: object
+      additionalProperties: false
+      required: [phase, completed]
+      properties: { phase: { enum: [warmup, work] }, completed: { type: boolean }, load: { $ref: '#/components/schemas/TrainingLoad' }, reps: { type: integer, minimum: 1, maximum: 1000 }, seconds: { type: integer, minimum: 1, maximum: 21600 }, effort: { $ref: '#/components/schemas/TrainingEffort' }, failure: { type: boolean } }
+      oneOf: [{ required: [reps], not: { required: [seconds] } }, { required: [seconds], not: { required: [reps] } }]
+    TrainingExecutionEntry:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [planEntryId, exerciseId, disposition, sets]
+          properties: { planEntryId: { $ref: '#/components/schemas/UUIDv4' }, exerciseId: { type: string, minLength: 1, maxLength: 128 }, disposition: { enum: [PERFORMED, SUBSTITUTED, OMITTED] }, sets: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/TrainingExecutionSet' } } }
+        - type: object
+          additionalProperties: false
+          required: [exerciseId, disposition, sets]
+          properties: { exerciseId: { type: string, minLength: 1, maxLength: 128 }, disposition: { const: ADDED }, sets: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/TrainingExecutionSet' } } }
+      discriminator: { propertyName: disposition }
+    TrainingPlanPayload:
+      type: object
+      additionalProperties: false
+      required: [relationId, exercises]
+      properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, goalVersionId: { $ref: '#/components/schemas/UUIDv4' }, exercises: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/TrainingPlanExercise' } } }
+    TrainingGoalsPayload:
+      type: object
+      additionalProperties: false
+      required: [relationId, goals]
+      properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, goals: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/TrainingGoal' } } }
+    TrainingSessionStartPayload:
+      type: object
+      additionalProperties: false
+      required: [planVersionId]
+      properties: { planVersionId: { $ref: '#/components/schemas/UUIDv4' } }
+    TrainingFinishPayload:
+      type: object
+      additionalProperties: false
+      required: [sessionId, entries]
+      properties: { sessionId: { $ref: '#/components/schemas/UUIDv4' }, entries: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/TrainingExecutionEntry' } } }
+    TrainingAbandonPayload:
+      type: object
+      additionalProperties: false
+      required: [sessionId]
+      properties: { sessionId: { $ref: '#/components/schemas/UUIDv4' } }
+    TrainingBodyweightPayload:
+      type: object
+      additionalProperties: false
+      required: [weight, unit, reportedDatePanama]
+      properties: { weight: { type: number, exclusiveMinimum: 0, maximum: 500 }, unit: { enum: [KG, LB] }, reportedDatePanama: { type: string, format: date } }
+    TrainingPlanMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/TrainingPlanPayload' } } }]
+    TrainingGoalsMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/TrainingGoalsPayload' } } }]
+    TrainingSessionStartMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/TrainingSessionStartPayload' } } }]
+    TrainingFinishMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/TrainingFinishPayload' } } }]
+    TrainingAbandonMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/TrainingAbandonPayload' } } }]
+    TrainingBodyweightMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/TrainingBodyweightPayload' } } }]
+    TrainingCurrentPlan:
+      type: object
+      additionalProperties: false
+      required: [id, versionNumber, relationId, exercises]
+      properties: { id: { $ref: '#/components/schemas/UUIDv4' }, versionNumber: { type: integer, minimum: 1 }, relationId: { $ref: '#/components/schemas/UUIDv4' }, exercises: { type: array, items: { $ref: '#/components/schemas/TrainingPlanExercise' } } }
+    TrainingCurrentGoals:
+      type: object
+      additionalProperties: false
+      required: [id, versionNumber, relationId, goals]
+      properties: { id: { $ref: '#/components/schemas/UUIDv4' }, versionNumber: { type: integer, minimum: 1 }, relationId: { $ref: '#/components/schemas/UUIDv4' }, goals: { type: array, items: { $ref: '#/components/schemas/TrainingGoal' } } }
+    TrainingExecutionReadbackItem:
+      type: object
+      additionalProperties: false
+      required: [executionId, sessionId, submittedAtUtc, actual]
+      properties: { executionId: { $ref: '#/components/schemas/UUIDv4' }, sessionId: { $ref: '#/components/schemas/UUIDv4' }, submittedAtUtc: { $ref: '#/components/schemas/IsoUtc' }, actual: { $ref: '#/components/schemas/TrainingFinishPayload' } }
+    TrainingWeightReadbackItem:
+      type: object
+      additionalProperties: false
+      required: [sourceKind, sourceRecordId, weight, unit]
+      properties: { sourceKind: { enum: [SQLITE_BODY_WEIGHT, LEGACY_BODY_WEIGHT] }, sourceRecordId: { type: string, minLength: 1 }, weight: { type: number }, unit: { enum: [KG, LB, UNKNOWN] }, reportedDatePanama: { type: string, format: date }, receivedAtUtc: { $ref: '#/components/schemas/IsoUtc' } }
+    TrainingHistorySet:
+      type: object
+      additionalProperties: false
+      required: [phase]
+      properties: { phase: { enum: [warmup, work] }, side: { enum: [L, R] }, load: { type: object, additionalProperties: false, required: [kind], properties: { kind: { enum: [BODY_WEIGHT, EXTERNAL, ASSISTANCE, REPORTED_UNKNOWN] }, kg: { type: number }, value: { type: number }, unit: { enum: [KG, LB, UNKNOWN] } } }, reps: { type: number }, seconds: { type: number }, minutes: { type: number }, effort: { $ref: '#/components/schemas/TrainingEffort' }, failure: { type: boolean } }
+    TrainingHistoryExercise:
+      type: object
+      additionalProperties: false
+      required: [exerciseId, sets]
+      properties: { exerciseId: { type: string, minLength: 1, maxLength: 128 }, sets: { type: array, items: { $ref: '#/components/schemas/TrainingHistorySet' } } }
+    TrainingHistoryReadbackItem:
+      type: object
+      additionalProperties: false
+      required: [kind, sourceKind, sourceRecordId]
+      properties: { kind: { enum: [WORKOUT, BODY_WEIGHT] }, sourceKind: { enum: [LEGACY_WORKOUT, LEGACY_BODY_WEIGHT, SQLITE_EXECUTION, SQLITE_BODY_WEIGHT] }, sourceRecordId: { type: string, minLength: 1 }, reportedDate: { type: string, format: date }, reportedDatePanama: { type: string, format: date }, unit: { enum: [KG, LB, UNKNOWN] }, value: { type: number }, weight: { type: number }, exercises: { type: array, items: { $ref: '#/components/schemas/TrainingHistoryExercise' } } }
+    TrainingExecutionPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/TrainingExecutionReadbackItem' } }, nextCursor: { oneOf: [{ type: string }, { type: 'null' }] } }
+    TrainingWeightPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/TrainingWeightReadbackItem' } }, nextCursor: { oneOf: [{ type: string }, { type: 'null' }] } }
+    TrainingHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/TrainingHistoryReadbackItem' } }, nextCursor: { oneOf: [{ type: string }, { type: 'null' }] } }
+    RolesPayload:
+      type: object
+      additionalProperties: false
+      required: [accountId, roles, reason]
+      properties:
+        accountId: { $ref: '#/components/schemas/ExistingAccountId' }
+        roles: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/OperationalRole' } }
+        reason: { $ref: '#/components/schemas/Reason' }
+    RolesMutation:
+      allOf:
+        - $ref: '#/components/schemas/MutationEnvelope'
+        - type: object
+          properties: { payload: { $ref: '#/components/schemas/RolesPayload' } }
+    ScopePayload:
+      type: object
+      additionalProperties: false
+      required: [coordinatorId, clientId, assigned, reason]
+      properties:
+        coordinatorId: { $ref: '#/components/schemas/ExistingAccountId' }
+        clientId: { $ref: '#/components/schemas/ExistingAccountId' }
+        assigned: { type: boolean }
+        reason: { $ref: '#/components/schemas/Reason' }
+    ScopeMutation:
+      allOf:
+        - $ref: '#/components/schemas/MutationEnvelope'
+        - type: object
+          properties: { payload: { $ref: '#/components/schemas/ScopePayload' } }
+    InvitationCreatePayload:
+      type: object
+      additionalProperties: false
+      required: [commercialName, grants]
+      properties:
+        knownClientId: { $ref: '#/components/schemas/ExistingAccountId' }
+        commercialName: { type: string, minLength: 1, maxLength: 120 }
+        grants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } }
+    InvitationCreateMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/InvitationCreatePayload' } } }]
+    InvitationReplacePayload:
+      allOf:
+        - $ref: '#/components/schemas/InvitationCreatePayload'
+        - type: object
+          required: [invitationId]
+          properties: { invitationId: { $ref: '#/components/schemas/UUIDv4' } }
+    InvitationReplaceMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/InvitationReplacePayload' } } }]
+    InvitationTokenPayload:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties: { token: { type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]+$' } }
+    InvitePreviewInput: { $ref: '#/components/schemas/InvitationTokenPayload' }
+    InvitationAcceptPayload:
+      type: object
+      additionalProperties: false
+      required: [token, grants]
+      properties:
+        token: { type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]+$' }
+        grants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } }
+    InvitationAcceptMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/InvitationAcceptPayload' } } }]
+    InvitationRejectMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/InvitationTokenPayload' } } }]
+    InvitationRevokePayload:
+      type: object
+      additionalProperties: false
+      required: [invitationId, reason]
+      properties: { invitationId: { $ref: '#/components/schemas/UUIDv4' }, reason: { $ref: '#/components/schemas/Reason' } }
+    InvitationRevokeMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/InvitationRevokePayload' } } }]
+    RelationConfirmPayload:
+      type: object
+      additionalProperties: false
+      required: [relationId]
+      properties: { relationId: { $ref: '#/components/schemas/UUIDv4' } }
+    RelationConfirmMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/RelationConfirmPayload' } } }]
+    RelationChangePayload:
+      type: object
+      additionalProperties: false
+      required: [relationId, reason]
+      properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, reason: { $ref: '#/components/schemas/Reason' } }
+    RelationChangeMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/RelationChangePayload' } } }]
+    GrantReplacePayload:
+      type: object
+      additionalProperties: false
+      required: [relationId, grants]
+      properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, grants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } } }
+    GrantReplaceMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/GrantReplacePayload' } } }]
+    GrantRevokePayload:
+      type: object
+      additionalProperties: false
+      required: [relationId, kind, reason]
+      properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, kind: { type: string, enum: [PLAN, EXECUTION, HISTORY, WEIGHT] }, reason: { $ref: '#/components/schemas/Reason' } }
+    GrantRevokeMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/GrantRevokePayload' } } }]
+    CommercialPayload:
+      type: object
+      additionalProperties: false
+      required: [clientId, kind, reference, reason]
+      properties:
+        clientId: { $ref: '#/components/schemas/ExistingAccountId' }
+        kind: { type: string, enum: [MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL, CUSTOM] }
+        customStartPanama: { type: string, format: date }
+        customEndPanamaInclusive: { type: string, format: date }
+        reference: { $ref: '#/components/schemas/Reference' }
+        reason: { $ref: '#/components/schemas/Reason' }
+    CommercialConfirmMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/CommercialPayload' } } }]
+    VersionToken:
+      type: object
+      additionalProperties: false
+      required: [kind, key, version]
+      properties: { kind: { type: string, minLength: 1 }, key: { type: string, minLength: 1 }, version: { $ref: '#/components/schemas/SafeVersion' } }
+    EntityReceipt:
+      type: object
+      additionalProperties: false
+      required: [type, id, version]
+      description: For immutable committed entities, version is the historical commit reference. Mutable invitation and relation receipts expose their referenced current entity version.
+      properties: { type: { type: string, minLength: 1 }, id: { type: string, minLength: 1 }, version: { $ref: '#/components/schemas/SafeVersion' } }
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      required: [operationId, entity, versionTokens, result, requestId]
+      properties:
+        operationId: { $ref: '#/components/schemas/UUIDv4' }
+        replayed: { type: boolean, const: true }
+        entity: { $ref: '#/components/schemas/EntityReceipt' }
+        versionTokens: { type: array, description: Current optimistic-lock tokens at response time, including on replay., items: { $ref: '#/components/schemas/VersionToken' } }
+        # Result varies by mutation. Individual route receipts constrain it where
+        # needed; this generic envelope must not reject committed nonempty results.
+        result: { type: object }
+        requestId: { type: string, minLength: 1 }
+    TrainingPlanReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: false, required: [planVersionId, relationId, versionNumber, goalVersionId, exercises], properties: { planVersionId: { $ref: '#/components/schemas/UUIDv4' }, relationId: { $ref: '#/components/schemas/UUIDv4' }, versionNumber: { type: integer, minimum: 1 }, goalVersionId: { oneOf: [{ $ref: '#/components/schemas/UUIDv4' }, { type: 'null' }] }, exercises: { type: array, items: { $ref: '#/components/schemas/TrainingPlanExercise' } } } }
+    TrainingGoalReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: false, required: [goalVersionId, relationId, versionNumber, goals], properties: { goalVersionId: { $ref: '#/components/schemas/UUIDv4' }, relationId: { $ref: '#/components/schemas/UUIDv4' }, versionNumber: { type: integer, minimum: 1 }, goals: { type: array, items: { $ref: '#/components/schemas/TrainingGoal' } } } }
+    TrainingSessionSnapshot:
+      type: object
+      additionalProperties: false
+      required: [planVersionId, planVersionNumber, goalVersionId, relationId, accessWindowId, exercises]
+      properties: { planVersionId: { $ref: '#/components/schemas/UUIDv4' }, planVersionNumber: { type: integer, minimum: 1 }, goalVersionId: { oneOf: [{ $ref: '#/components/schemas/UUIDv4' }, { type: 'null' }] }, relationId: { $ref: '#/components/schemas/UUIDv4' }, accessWindowId: { $ref: '#/components/schemas/UUIDv4' }, exercises: { type: array, items: { $ref: '#/components/schemas/TrainingPlanExercise' } } }
+    TrainingSessionStartReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: false, required: [sessionId, state, serverStartedAtUtc, snapshot], properties: { sessionId: { $ref: '#/components/schemas/UUIDv4' }, state: { const: OPEN }, serverStartedAtUtc: { $ref: '#/components/schemas/IsoUtc' }, snapshot: { $ref: '#/components/schemas/TrainingSessionSnapshot' } } }
+    TrainingFinishReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: false, required: [executionId, sessionId, submittedAtUtc, state], properties: { executionId: { $ref: '#/components/schemas/UUIDv4' }, sessionId: { $ref: '#/components/schemas/UUIDv4' }, submittedAtUtc: { $ref: '#/components/schemas/IsoUtc' }, state: { const: FINISHED } } }
+    TrainingAbandonReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: false, required: [sessionId, state, closedAtUtc], properties: { sessionId: { $ref: '#/components/schemas/UUIDv4' }, state: { const: CLOSED }, closedAtUtc: { $ref: '#/components/schemas/IsoUtc' } } }
+    TrainingBodyweightReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: false, required: [bodyweightId, weight, unit, reportedDatePanama, receivedAtUtc], properties: { bodyweightId: { $ref: '#/components/schemas/UUIDv4' }, weight: { type: number }, unit: { enum: [KG, LB] }, reportedDatePanama: { type: string, format: date }, receivedAtUtc: { $ref: '#/components/schemas/IsoUtc' } } }
+    TrainingCurrentReadback:
+      type: object
+      additionalProperties: false
+      required: [plan, goals, versionTokens]
+      properties: { plan: { oneOf: [{ $ref: '#/components/schemas/TrainingCurrentPlan' }, { type: 'null' }] }, goals: { oneOf: [{ $ref: '#/components/schemas/TrainingCurrentGoals' }, { type: 'null' }] }, versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } } }
+    TrainerCurrentPlanReadback:
+      type: object
+      additionalProperties: false
+      required: [plan, versionTokens]
+      properties: { plan: { oneOf: [{ $ref: '#/components/schemas/TrainingCurrentPlan' }, { type: 'null' }] }, versionTokens: { type: array, minItems: 1, maxItems: 1, items: { $ref: '#/components/schemas/VersionToken' } } }
+    TrainerCurrentGoalsReadback:
+      type: object
+      additionalProperties: false
+      required: [goals, versionTokens]
+      properties: { goals: { oneOf: [{ $ref: '#/components/schemas/TrainingCurrentGoals' }, { type: 'null' }] }, versionTokens: { type: array, minItems: 1, maxItems: 1, items: { $ref: '#/components/schemas/VersionToken' } } }
+    TrainingCurrentSessionReadback:
+      type: object
+      additionalProperties: false
+      properties:
+        session: {}
+        closeOnlySession: {}
+        versionTokens: {}
+      description: ClientTraining consumers must use the returned SESSION token for finish or abandon. A stale OPEN session never includes a snapshot; use closeOnlySession only to abandon it explicitly, then start a new session.
+      oneOf:
+        - required: [session, closeOnlySession, versionTokens]
+          properties:
+            session: { $ref: '#/components/schemas/TrainingOpenSession' }
+            closeOnlySession: { type: 'null' }
+            versionTokens: { $ref: '#/components/schemas/TrainingOpenSessionTokens' }
+        - required: [session, closeOnlySession, versionTokens]
+          properties:
+            session: { type: 'null' }
+            closeOnlySession: { $ref: '#/components/schemas/TrainingCloseOnlySession' }
+            versionTokens: { $ref: '#/components/schemas/TrainingOpenSessionTokens' }
+        - required: [session, closeOnlySession, versionTokens]
+          properties:
+            session: { type: 'null' }
+            closeOnlySession: { type: 'null' }
+            versionTokens:
+              type: array
+              minItems: 1
+              maxItems: 1
+              items: { $ref: '#/components/schemas/SessionSetVersionToken' }
+    TrainingOpenSession:
+      type: object
+      additionalProperties: false
+      required: [sessionId, planVersionId, goalVersionId, serverStartedAtUtc, state, snapshot]
+      properties:
+        sessionId: { $ref: '#/components/schemas/UUIDv4' }
+        planVersionId: { $ref: '#/components/schemas/UUIDv4' }
+        goalVersionId: { oneOf: [{ $ref: '#/components/schemas/UUIDv4' }, { type: 'null' }] }
+        serverStartedAtUtc: { $ref: '#/components/schemas/IsoUtc' }
+        state: { const: OPEN }
+        snapshot: { $ref: '#/components/schemas/TrainingSessionSnapshot' }
+    TrainingCloseOnlySession:
+      type: object
+      additionalProperties: false
+      required: [sessionId, state]
+      properties: { sessionId: { $ref: '#/components/schemas/UUIDv4' }, state: { const: OPEN } }
+    SessionVersionToken:
+      type: object
+      additionalProperties: false
+      required: [kind, key, version]
+      properties:
+        kind: { const: SESSION }
+        key: { type: string, pattern: '^\["[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\]$' }
+        version: { type: integer, minimum: 0 }
+    SessionSetVersionToken:
+      type: object
+      additionalProperties: false
+      required: [kind, key, version]
+      properties:
+        kind: { const: SESSION_SET }
+        key: { type: string, pattern: '^\["[^"\\]+"\]$' }
+        version: { type: integer, minimum: 0 }
+    TrainingOpenSessionTokens:
+      type: array
+      minItems: 2
+      maxItems: 2
+      prefixItems: [{ $ref: '#/components/schemas/SessionVersionToken' }, { $ref: '#/components/schemas/SessionSetVersionToken' }]
+      items: false
+    TrainingBodyweightReadback:
+      type: object
+      additionalProperties: false
+      required: [entries, versionTokens]
+      properties: { entries: { type: array, items: { $ref: '#/components/schemas/TrainingWeightReadbackItem' } }, versionTokens: { type: array, minItems: 1, maxItems: 1, items: { $ref: '#/components/schemas/VersionToken' } } }
+    EmptyAuthorityInput:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    ExportMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/EmptyAuthorityInput' } } }]
+    DeletionRequestMutation:
+      allOf: [{ $ref: '#/components/schemas/MutationEnvelope' }, { type: object, properties: { payload: { $ref: '#/components/schemas/EmptyAuthorityInput' } } }]
+    ExportJobResult:
+      type: object
+      additionalProperties: false
+      required: [jobId, state]
+      properties: { jobId: { $ref: '#/components/schemas/UUIDv4' }, state: { const: READY } }
+    DeletionRequestResult:
+      type: object
+      additionalProperties: false
+      required: [deletionRequestId, state]
+      properties: { deletionRequestId: { $ref: '#/components/schemas/UUIDv4' }, state: { const: REQUESTED } }
+    ExportReceipt:
+      allOf: [{ $ref: '#/components/schemas/MutationReceipt' }, { type: object, properties: { result: { $ref: '#/components/schemas/ExportJobResult' } } }]
+    DeletionRequestReceipt:
+      allOf: [{ $ref: '#/components/schemas/MutationReceipt' }, { type: object, properties: { result: { $ref: '#/components/schemas/DeletionRequestResult' } } }]
+    ExportLegacyValue:
+      oneOf:
+        - { type: 'null' }
+        - { type: string }
+        - { type: number }
+        - { type: boolean }
+        - type: array
+          items: { $ref: '#/components/schemas/ExportLegacyValue' }
+        - type: object
+          propertyNames: { not: { enum: [password, passwordHash, credential, credentials, token, tokens, accessToken, refreshToken, sessionToken, authorization, auth, secret, secrets, apiKey, privateKey, privateToken, authToken, snapshot_json, snapshotJson, planSnapshot, planVersionPayload] } }
+          additionalProperties: { $ref: '#/components/schemas/ExportLegacyValue' }
+    OwnedLegacyState:
+      type: object
+      additionalProperties: false
+      properties:
+        _rev: { $ref: '#/components/schemas/ExportLegacyValue' }
+        _ts: { $ref: '#/components/schemas/ExportLegacyValue' }
+        _wid: { $ref: '#/components/schemas/ExportLegacyValue' }
+        _wids: { $ref: '#/components/schemas/ExportLegacyValue' }
+        deleted: { $ref: '#/components/schemas/ExportLegacyValue' }
+        edited: { $ref: '#/components/schemas/ExportLegacyValue' }
+        undone: { $ref: '#/components/schemas/ExportLegacyValue' }
+        unit: { $ref: '#/components/schemas/ExportLegacyValue' }
+        unitSet: { $ref: '#/components/schemas/ExportLegacyValue' }
+        resetAt: { $ref: '#/components/schemas/ExportLegacyValue' }
+        resetIds: { $ref: '#/components/schemas/ExportLegacyValue' }
+        restSec: { $ref: '#/components/schemas/ExportLegacyValue' }
+        restPauseSec: { $ref: '#/components/schemas/ExportLegacyValue' }
+        sound: { $ref: '#/components/schemas/ExportLegacyValue' }
+        soundOnSilent: { $ref: '#/components/schemas/ExportLegacyValue' }
+        vibrateOnSilent: { $ref: '#/components/schemas/ExportLegacyValue' }
+        timerFlash: { $ref: '#/components/schemas/ExportLegacyValue' }
+        timedSetOvertime: { $ref: '#/components/schemas/ExportLegacyValue' }
+        keepAwake: { $ref: '#/components/schemas/ExportLegacyValue' }
+        lang: { $ref: '#/components/schemas/ExportLegacyValue' }
+        theme: { $ref: '#/components/schemas/ExportLegacyValue' }
+        accent: { $ref: '#/components/schemas/ExportLegacyValue' }
+        accentCustom: { $ref: '#/components/schemas/ExportLegacyValue' }
+        body: { $ref: '#/components/schemas/ExportLegacyValue' }
+        targetW: { $ref: '#/components/schemas/ExportLegacyValue' }
+        rateGoal: { $ref: '#/components/schemas/ExportLegacyValue' }
+        routines: { $ref: '#/components/schemas/ExportLegacyValue' }
+        workouts: { $ref: '#/components/schemas/ExportLegacyValue' }
+        bodyweight: { $ref: '#/components/schemas/ExportLegacyValue' }
+        measurements: { $ref: '#/components/schemas/ExportLegacyValue' }
+        measurementEnabled: { $ref: '#/components/schemas/ExportLegacyValue' }
+        customMeasurements: { $ref: '#/components/schemas/ExportLegacyValue' }
+        customEx: { $ref: '#/components/schemas/ExportLegacyValue' }
+        week: { $ref: '#/components/schemas/ExportLegacyValue' }
+        dayPlan: { $ref: '#/components/schemas/ExportLegacyValue' }
+        dayNotes: { $ref: '#/components/schemas/ExportLegacyValue' }
+        queue: { $ref: '#/components/schemas/ExportLegacyValue' }
+        rotation: { $ref: '#/components/schemas/ExportLegacyValue' }
+        scheduleMode: { $ref: '#/components/schemas/ExportLegacyValue' }
+        exWeights: { $ref: '#/components/schemas/ExportLegacyValue' }
+        gifSize: { $ref: '#/components/schemas/ExportLegacyValue' }
+        heatmapMetric: { $ref: '#/components/schemas/ExportLegacyValue' }
+        volumeWarmups: { $ref: '#/components/schemas/ExportLegacyValue' }
+        workoutView: { $ref: '#/components/schemas/ExportLegacyValue' }
+        collapseCompleted: { $ref: '#/components/schemas/ExportLegacyValue' }
+        exerciseView: { $ref: '#/components/schemas/ExportLegacyValue' }
+        wc: { $ref: '#/components/schemas/ExportLegacyValue' }
+        hints: { $ref: '#/components/schemas/ExportLegacyValue' }
+        reminder: { $ref: '#/components/schemas/ExportLegacyValue' }
+        effort: { $ref: '#/components/schemas/ExportLegacyValue' }
+        autoBackup: { $ref: '#/components/schemas/ExportLegacyValue' }
+        equipProfiles: { $ref: '#/components/schemas/ExportLegacyValue' }
+        activeEquipId: { $ref: '#/components/schemas/ExportLegacyValue' }
+        equipFilterOn: { $ref: '#/components/schemas/ExportLegacyValue' }
+        exNotes: { $ref: '#/components/schemas/ExportLegacyValue' }
+        exAliases: { $ref: '#/components/schemas/ExportLegacyValue' }
+        favEx: { $ref: '#/components/schemas/ExportLegacyValue' }
+        weekStart: { $ref: '#/components/schemas/ExportLegacyValue' }
+        wdec: { $ref: '#/components/schemas/ExportLegacyValue' }
+        speedUnit: { $ref: '#/components/schemas/ExportLegacyValue' }
+        barWeights: { $ref: '#/components/schemas/ExportLegacyValue' }
+        plates: { $ref: '#/components/schemas/ExportLegacyValue' }
+        loadKind: { $ref: '#/components/schemas/ExportLegacyValue' }
+        dbLoad: { $ref: '#/components/schemas/ExportLegacyValue' }
+        dumbbells: { $ref: '#/components/schemas/ExportLegacyValue' }
+        stackWeights: { $ref: '#/components/schemas/ExportLegacyValue' }
+        gymCards: { $ref: '#/components/schemas/ExportLegacyValue' }
+        lastGymCardId: { $ref: '#/components/schemas/ExportLegacyValue' }
+        checkIn: { $ref: '#/components/schemas/ExportLegacyValue' }
+        showWeightCard: { $ref: '#/components/schemas/ExportLegacyValue' }
+        weighIn: { $ref: '#/components/schemas/ExportLegacyValue' }
+        connStatus: { $ref: '#/components/schemas/ExportLegacyValue' }
+        shareMap: { $ref: '#/components/schemas/ExportLegacyValue' }
+        connLocal: { $ref: '#/components/schemas/ExportLegacyValue' }
+        startFrom: { $ref: '#/components/schemas/ExportLegacyValue' }
+        lastFrom: { $ref: '#/components/schemas/ExportLegacyValue' }
+        enParens: { $ref: '#/components/schemas/ExportLegacyValue' }
+        enOnly: { $ref: '#/components/schemas/ExportLegacyValue' }
+        logRef: { $ref: '#/components/schemas/ExportLegacyValue' }
+        balanceTemplate: { $ref: '#/components/schemas/ExportLegacyValue' }
+        balanceOverrides: { $ref: '#/components/schemas/ExportLegacyValue' }
+        coach: { $ref: '#/components/schemas/ExportLegacyValue' }
+    OwnedExportDocument:
+      type: object
+      additionalProperties: false
+      required: [schema, generatedAtUtc, legacyState, sqlite, commercial, consent]
+      properties:
+        schema: { const: opengym.owned-export.v1 }
+        generatedAtUtc: { $ref: '#/components/schemas/IsoUtc' }
+        legacyState: { $ref: '#/components/schemas/OwnedLegacyState' }
+        sqlite:
+          type: object
+          additionalProperties: false
+          required: [sessionExecutionActuals, bodyweightEntries]
+          properties: { sessionExecutionActuals: { type: array, items: { $ref: '#/components/schemas/TrainingHistoryReadbackItem' } }, bodyweightEntries: { type: array, items: { $ref: '#/components/schemas/TrainingWeightReadbackItem' } } }
+        commercial:
+          type: object
+          additionalProperties: false
+          required: [subscriptionIntervals]
+          properties: { subscriptionIntervals: { type: array, items: { type: object, additionalProperties: false, required: [id, startUtc, endExclusiveUtc, anchorDay, kind, reference, reason, createdAtUtc], properties: { id: { type: string }, startUtc: { $ref: '#/components/schemas/IsoUtc' }, endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }, anchorDay: { type: integer }, kind: { type: string }, reference: { type: string }, reason: { type: string }, createdAtUtc: { $ref: '#/components/schemas/IsoUtc' } } } } }
+        consent:
+          type: object
+          additionalProperties: false
+          required: [relations]
+          properties: { relations: { type: array, items: { type: object, additionalProperties: false, required: [id, state, acceptedAtUtc, confirmedAtUtc, endedAtUtc, grants], properties: { id: { type: string }, state: { type: string }, acceptedAtUtc: { $ref: '#/components/schemas/IsoUtc' }, confirmedAtUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, endedAtUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, grants: { type: array, items: { type: object, additionalProperties: false, required: [kind, state, startUtc, endExclusiveUtc, revokedAtUtc], properties: { kind: { enum: [PLAN, EXECUTION, HISTORY, WEIGHT] }, state: { type: string }, startUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, endExclusiveUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, revokedAtUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] } } } } } } } }
+    InvitationReceipt:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          properties:
+            result:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [inviteId, token, expiresAt]
+                  properties: { replacedInvitationId: { $ref: '#/components/schemas/UUIDv4' }, inviteId: { $ref: '#/components/schemas/UUIDv4' }, token: { type: string, minLength: 43, maxLength: 43 }, expiresAt: { $ref: '#/components/schemas/IsoUtc' } }
+                - type: object
+                  additionalProperties: false
+                  required: [inviteId, tokenUnavailable, expiresAt]
+                  properties: { replacedInvitationId: { $ref: '#/components/schemas/UUIDv4' }, inviteId: { $ref: '#/components/schemas/UUIDv4' }, tokenUnavailable: { const: true }, expiresAt: { $ref: '#/components/schemas/IsoUtc' } }
+    AccessSnapshot:
+      type: object
+      additionalProperties: false
+      required: [account, managedSubscriptions, roles, entitlement, capabilities, compatibility, requestId, versionTokens]
+      properties:
+        account: { type: object, additionalProperties: false, required: [id, activity], properties: { id: { $ref: '#/components/schemas/ExistingAccountId' }, activity: { type: string, enum: [ACTIVE, DISABLED, DELETED, UNKNOWN] } } }
+        managedSubscriptions: { type: boolean }
+        roles: { type: array, items: { $ref: '#/components/schemas/OperationalRole' } }
+        entitlement: { type: object, additionalProperties: false, required: [active, startUtc, endExclusiveUtc, version], properties: { active: { type: boolean }, startUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, endExclusiveUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, version: { $ref: '#/components/schemas/SafeVersion' } } }
+        capabilities: { type: array, items: { type: string } }
+        compatibility: { type: object, additionalProperties: false, required: [protectedTraining], properties: { protectedTraining: { type: string, enum: [supported, unsupported] } } }
+        requestId: { type: string }
+        versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }
+    OperationsUsersReadback:
+      type: object
+      additionalProperties: false
+      required: [users, requestId]
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [account, roles, pendingOperationalRole, version]
+            properties:
+              account: { type: object, additionalProperties: false, required: [id], properties: { id: { $ref: '#/components/schemas/ExistingAccountId' } } }
+              roles: { type: array, items: { $ref: '#/components/schemas/OperationalRole' } }
+              pendingOperationalRole: { type: object, additionalProperties: false }
+              version: { $ref: '#/components/schemas/SafeVersion' }
+        requestId: { type: string }
+    AuthorityError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties: { error: { type: string }, code: { type: string, enum: [unauthenticated, forbidden, not-entitled, relation-inactive, grant-missing, conflict, unsupported-client, invite-invalid, invite-expired, not-found, validation-error, policy-not-configured] }, requestId: { type: string } }
+    InvitationPreview:
+      type: object
+      additionalProperties: false
+      required: [trainer, purpose, categories, expiresAt, invitationVersion, proposedGrants]
+      properties:
+        trainer: { type: object, additionalProperties: false, required: [id], properties: { id: { $ref: '#/components/schemas/ExistingAccountId' } } }
+        purpose: { type: string, const: training-follow-up }
+        categories: { type: array, items: { type: string, enum: [PLAN, EXECUTION, HISTORY, WEIGHT] } }
+        expiresAt: { $ref: '#/components/schemas/IsoUtc' }
+        invitationVersion: { $ref: '#/components/schemas/SafeVersion' }
+        proposedGrants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } }
+    PageReadback:
+      type: object
+      additionalProperties: false
+      required: [nextCursor, versionTokens, requestId]
+      properties:
+        nextCursor: { oneOf: [{ type: string, minLength: 1 }, { type: 'null' }] }
+        versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }
+        requestId: { type: string, minLength: 1 }
+    PortfolioReadback:
+      type: object
+      additionalProperties: false
+      required: [portfolio, nextCursor, versionTokens, requestId]
+      properties: { portfolio: { type: array, items: { type: object, additionalProperties: false, required: [relationId, clientId, state, version], properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, clientId: { $ref: '#/components/schemas/ExistingAccountId' }, state: { type: string }, version: { $ref: '#/components/schemas/SafeVersion' } } } }, nextCursor: { oneOf: [{ type: string }, { type: 'null' }] }, versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }, requestId: { type: string } }
+    TrainerRelationsReadback:
+      type: object
+      additionalProperties: false
+      required: [relations, nextCursor, versionTokens, requestId]
+      properties: { relations: { type: array, items: { type: object, additionalProperties: false, required: [relationId, clientAlias, state, grants, version], properties: { relationId: { $ref: '#/components/schemas/UUIDv4' }, clientAlias: { type: string }, state: { type: string }, grants: { type: array, items: { $ref: '#/components/schemas/TrainerGrantedConsent' } }, version: { $ref: '#/components/schemas/SafeVersion' } } } }, nextCursor: { oneOf: [{ type: string }, { type: 'null' }] }, versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }, requestId: { type: string } }
+    CommercialClientsReadback:
+      type: object
+      additionalProperties: false
+      required: [clients, nextCursor, versionTokens, requestId]
+      properties: { clients: { type: array, items: { type: object, additionalProperties: false, required: [clientId, entitlement], properties: { clientId: { $ref: '#/components/schemas/ExistingAccountId' }, entitlement: { type: object, additionalProperties: false } } } }, nextCursor: { oneOf: [{ type: string }, { type: 'null' }] }, versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }, requestId: { type: string } }
+    TrainerInvitationsReadback:
+      type: object
+      additionalProperties: false
+      required: [invitations, nextCursor, versionTokens, requestId]
+      properties:
+        invitations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [invitationId, state, commercialName, expiresAt, version]
+            properties:
+              invitationId: { $ref: '#/components/schemas/UUIDv4' }
+              state: { type: string, enum: [PENDING, ACCEPTED, REJECTED, REVOKED, EXPIRED] }
+              commercialName: { type: string }
+              expiresAt: { $ref: '#/components/schemas/IsoUtc' }
+              version: { $ref: '#/components/schemas/SafeVersion' }
+        nextCursor: { oneOf: [{ type: string, minLength: 1 }, { type: 'null' }] }
+        versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }
+        requestId: { type: string, minLength: 1 }
+    ClientRelationsReadback:
+      type: object
+      additionalProperties: false
+      required: [relations, nextCursor, versionTokens, requestId]
+      properties:
+        relations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [relationId, trainer, state, acceptedAt, confirmedAt, endedAt, grants, version]
+            properties:
+              relationId: { $ref: '#/components/schemas/UUIDv4' }
+              trainer: { type: object, additionalProperties: false, required: [id], properties: { id: { $ref: '#/components/schemas/ExistingAccountId' } } }
+              state: { type: string }
+              acceptedAt: { $ref: '#/components/schemas/IsoUtc' }
+              confirmedAt: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }
+              endedAt: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }
+              grants: { type: array, items: { $ref: '#/components/schemas/GrantedConsent' } }
+              version: { $ref: '#/components/schemas/SafeVersion' }
+        nextCursor: { oneOf: [{ type: string, minLength: 1 }, { type: 'null' }] }
+        versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }
+        requestId: { type: string, minLength: 1 }
+    GrantedConsent:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [PLAN, EXECUTION, HISTORY, WEIGHT] }
+        startUtc: { $ref: '#/components/schemas/IsoUtc' }
+        endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }
+        includeWeight: { type: boolean }
+    TrainerGrantedConsent:
+      type: object
+      additionalProperties: false
+      required: [grantId, kind, state]
+      properties:
+        grantId: { $ref: '#/components/schemas/UUIDv4' }
+        kind: { type: string, enum: [PLAN, EXECUTION, HISTORY, WEIGHT] }
+        state: { type: string, enum: [ACTIVE, REVOKED, EXPIRED] }
+        startUtc: { $ref: '#/components/schemas/IsoUtc' }
+        endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }
+        includeWeight: { type: boolean }
+        eligibleFromUtc: { $ref: '#/components/schemas/IsoUtc' }
+    ScopePairsReadback:
+      type: object
+      additionalProperties: false
+      required: [scopes, nextCursor, requestId]
+      properties:
+        scopes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [coordinatorId, clientId, assigned, version]
+            properties:
+              coordinatorId: { $ref: '#/components/schemas/ExistingAccountId' }
+              clientId: { $ref: '#/components/schemas/ExistingAccountId' }
+              assigned: { type: boolean }
+              version: { $ref: '#/components/schemas/SafeVersion' }
+        nextCursor: { oneOf: [{ type: string, minLength: 1 }, { type: 'null' }] }
+        requestId: { type: string, minLength: 1 }
     Error:
       type: object
       required: [error]

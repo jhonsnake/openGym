@@ -20,7 +20,7 @@ function seedRelation(store, { grantKinds = ['PLAN'], entitled = true } = {}) {
     tx.db.prepare("INSERT INTO invitations(id,trainer_id,commercial_name,token_sha256,state,expires_at_utc,created_at_utc,version) VALUES ('i','admin','n','h','ACCEPTED',?, ?,1)").run(far, at);
     tx.db.prepare("INSERT INTO relations(id,trainer_id,client_id,invitation_id,state,accepted_at_utc,version) VALUES (?, 'admin','subject','i','ACTIVE',?,1)").run(relationId, at);
     tx.db.prepare("INSERT INTO relation_access_windows(id,relation_id,eligible_from_utc,enabled_from_utc,reason,version) VALUES ('w',?,?,?,'x',1)").run(relationId, at, at);
-    for (const [index, kind] of grantKinds.entries()) tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,granted_by,version) VALUES (?,?,?,'ACTIVE',?,'subject',1)").run(`g${index}`, relationId, kind, at);
+    for (const [index, kind] of grantKinds.entries()) tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,granted_by,eligible_from_utc,version) VALUES (?,?,?,'ACTIVE',?,'subject',?,1)").run(`g${index}`, relationId, kind, at, at);
     if (entitled) tx.db.prepare("INSERT INTO subscription_intervals(id,client_id,start_utc,end_exclusive_utc,anchor_day,kind,reference,reason,created_by,created_at_utc,version) VALUES ('s','subject',?, ?,1,'MONTHLY','r','x','admin',?,1)").run(at, far, at);
   });
   return relationId;
@@ -50,7 +50,7 @@ test('relational capabilities bind trainer, client, window and explicit current 
     tx.db.prepare("INSERT INTO invitations(id,trainer_id,commercial_name,token_sha256,state,expires_at_utc,created_at_utc,version) VALUES ('i','admin','n','h','ACCEPTED',?, ?,1)").run(far, at);
     tx.db.prepare("INSERT INTO relations(id,trainer_id,client_id,invitation_id,state,accepted_at_utc,version) VALUES (?, 'admin','subject','i','ACTIVE',?,1)").run(id(10), at);
     tx.db.prepare("INSERT INTO relation_access_windows(id,relation_id,eligible_from_utc,enabled_from_utc,reason,version) VALUES ('w',?,?,?,'x',1)").run(id(10), at, at);
-    tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,granted_by,version) VALUES ('g',?,'PLAN','ACTIVE',?,'subject',1)").run(id(10), at);
+    tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,granted_by,eligible_from_utc,version) VALUES ('g',?,'PLAN','ACTIVE',?,'subject',?,1)").run(id(10), at, at);
     tx.db.prepare("INSERT INTO subscription_intervals(id,client_id,start_utc,end_exclusive_utc,anchor_day,kind,reference,reason,created_by,created_at_utc,version) VALUES ('s','subject',?, ?,1,'MONTHLY','r','x','admin',?,1)").run(at, far, at);
   });
   assert.doesNotThrow(() => store.transaction({}, tx => service.requireCapabilityTx(tx, { actorId: 'admin', subjectId: 'subject', capability: 'PUBLISH_PLAN', relationId: id(10), grantKind: 'PLAN' })));

@@ -172,6 +172,15 @@ let running = 0;
 const inflight = new Set();     // uids with a job queued or running (FR-07 single-flight)
 const forgetSeq = new Map();    // uid → bumped by every clearUser; a job carries the value it saw at enqueue
 const aborts = new Map();       // uid → AbortController of the provider call in flight, for clearUser to pull
+let entitlementGate = () => true;
+
+// server.js installs the managed-subscription authority check.  Keeping it here means a job
+// that waited in the real queue is checked again immediately before it reads a state/prompt or
+// calls a provider; it is not merely an HTTP-route guard.
+export function setEntitlementGate(fn) {
+  if (typeof fn !== 'function') throw new TypeError('entitlement gate must be a function');
+  entitlementGate = fn;
+}
 
 class CoachError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -196,6 +205,7 @@ export function clampMessage(text) {
  * `off`, `busy`, `cap`, `consent`.
  */
 export function enqueue(uid, opts) {
+  if (!entitlementGate(uid)) throw new CoachError('not-entitled', 'training access is not entitled');
   if (!cfgStore.isEnabled() || !cfgStore.isConnected()) throw new CoachError('off', 'the Coach is not set up on this instance');
   if (inflight.has(uid)) throw new CoachError('busy', 'the Coach is already thinking about your training');
 
@@ -317,6 +327,7 @@ export function setProposalHook(fn) { onProposal = fn; }
 /* ---------- execution ---------- */
 
 async function execute(job) {
+  if (!entitlementGate(job.uid)) return finish(job, { outcome: 'failed', errorClass: 'not-entitled' });
   patchUser(job.uid, { current: { id: job.id, kind: job.kind, state: 'running', startedAt: job.startedAt } });
 
   const S = readState(job.uid);

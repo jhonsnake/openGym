@@ -1,0 +1,233 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import Ajv2020 from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
+import YAML from 'yaml';
+import { boundPort } from './helpers.mjs';
+import { panamaDateAtServerClock } from '../subscription-calendar.js';
+
+const apiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const secret = crypto.randomBytes(32).toString('hex');
+const op = n => `123e4567-e89b-42d3-a456-42661417${String(n).padStart(4, '0')}`;
+const mint = uid => { const payload = `${uid}:${Date.now() + 86400000}:0`; return `gymsid=${payload}.${crypto.createHmac('sha256', secret).update(payload).digest('base64url')}`; };
+const exercise = { exerciseId: '0025', mode: 'reps', sets: 1, commonTarget: { reps: { exact: 8 } }, setOverrides: {} };
+
+function start(dataDir) {
+  const child = spawn(process.execPath, ['server.js'], { cwd: apiDir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' } });
+  let log = ''; child.stdout.on('data', d => { log += d; }); child.stderr.on('data', d => { log += d; });
+  return { child, base: boundPort(child, () => log).then(port => `http://127.0.0.1:${port}`) };
+}
+function schema(name) {
+  const document = YAML.parse(fs.readFileSync(path.join(apiDir, 'openapi.yaml'), 'utf8')); document.$id = 'https://opengym.test/openapi.yaml';
+  const ajv = new Ajv2020({ allErrors: true, strict: false }); addFormats(ajv); ajv.addSchema(document);
+  return ajv.getSchema(`${document.$id}#/components/schemas/${name}`);
+}
+
+test('T5 OpenAPI mutations are closed endpoint DTOs with real variants and limits', () => {
+  const envelope = (n, payload) => ({ operationId: op(n), expectedVersion: 0, payload });
+  const relationId = op(700); const sessionId = op(701);
+  const plan = envelope(702, { relationId, exercises: [exercise] });
+  const goals = envelope(703, { relationId, goals: [{ label: 'Performance', kind: 'PERFORMANCE', exerciseId: '0025', targetLoad: { kind: 'BODY_WEIGHT' }, targetReps: 8 }] });
+  const start = envelope(704, { planVersionId: op(705) });
+  const finish = envelope(706, { sessionId, entries: [{ planEntryId: op(707), exerciseId: '0025', disposition: 'PERFORMED', sets: [{ phase: 'work', completed: true, reps: 8, effort: { kind: 'RPE', value: 9.5 }, failure: false }] }, { exerciseId: '0025', disposition: 'ADDED', sets: [{ phase: 'work', completed: true, reps: 6 }] }] });
+  const abandon = envelope(708, { sessionId });
+  const bodyweight = envelope(709, { weight: 79.5, unit: 'KG', reportedDatePanama: '2026-10-30' });
+  for (const [name, body] of [['TrainingPlanMutation', plan], ['TrainingGoalsMutation', goals], ['TrainingSessionStartMutation', start], ['TrainingFinishMutation', finish], ['TrainingAbandonMutation', abandon], ['TrainingBodyweightMutation', bodyweight]]) {
+    const validate = schema(name); assert.equal(validate(body), true, `${name}: ${JSON.stringify(validate.errors)}`);
+  }
+  assert.equal(schema('TrainingPlanMutation')({ ...plan, payload: { ...plan.payload, attacker: true } }), false);
+  assert.equal(schema('TrainingPlanMutation')(envelope(710, { relationId, exercises: 'not-an-array' })), false);
+  assert.equal(schema('TrainingGoalsMutation')(envelope(711, { relationId, goals: [{ label: 'Bad', kind: 'PERFORMANCE', exerciseId: '0025', targetReps: 8 }]})), false);
+  assert.equal(schema('TrainingFinishMutation')(envelope(712, { sessionId, entries: [{ exerciseId: '0025', disposition: 'ADDED', planEntryId: op(713), sets: [] }] })), false);
+  assert.equal(schema('TrainingBodyweightMutation')(envelope(714, { weight: 0, unit: 'KG', reportedDatePanama: '2026-10-30' })), false);
+  assert.equal(schema('TrainingPlanMutation')(envelope(715, { relationId, exercises: Array.from({ length: 41 }, () => exercise) })), false);
+});
+
+test('T5 HTTP matrix persists authoritative training through restart and enforces present authority', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'authority-training-http-'));
+  const historyEnd = new Date().toISOString();
+  fs.writeFileSync(path.join(dataDir, 'secret'), secret, { mode: 0o600 });
+  const state = { _rev: 0, workouts: [{ id: 'legacy-workout', d: '2026-10-01', entries: [{ id: '0025', sets: [{ r: 8, done: true }] }] }], bodyweight: [{ d: '2026-10-01', w: 80 }], unit: 'kg', customEx: [{ id: 'cx-owned' }] };
+  fs.writeFileSync(path.join(dataDir, 'state-client.json'), JSON.stringify(state));
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: [
+    { id: 'admin', name: 'Admin', admin: true, owner: true }, { id: 'trainer', name: 'Trainer' }, { id: 'trainer2', name: 'Trainer 2' },
+    { id: 'client', name: 'Client' }, { id: 'client2', name: 'Client 2' }, { id: 'client-expired', name: 'Expired Client' }, { id: 'coordinator', name: 'Coordinator' }, { id: 'disabled-trainer', name: 'Disabled', disabled: true }
+  ], creds: [], subs: [], invites: [] }));
+  let running = start(dataDir); let base = await running.base;
+  t.after(() => { running.child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const request = async (method, pathname, uid, body) => {
+    const response = await fetch(base + pathname, { method, headers: { Cookie: mint(uid), 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-origin' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  const mutation = (n, payload, expectedVersion = 0) => ({ operationId: op(n), expectedVersion, payload });
+  const setupRoles = [['trainer', ['TRAINER']], ['trainer2', ['TRAINER']], ['client', ['CLIENT']], ['client2', ['CLIENT']], ['client-expired', ['CLIENT']], ['coordinator', ['COORDINATOR']]];
+  for (let index = 0; index < setupRoles.length; index += 1) {
+    const [accountId, roles] = setupRoles[index];
+    assert.equal((await request('POST', '/api/admin/operations/roles', 'admin', mutation(index + 1, { accountId, roles, reason: 'HTTP T5 fixture' }))).status, 200);
+  }
+  assert.equal((await request('POST', '/api/admin/operations/scopes', 'admin', mutation(10, { coordinatorId: 'coordinator', clientId: 'client', assigned: true, reason: 'fixture' }))).status, 200);
+  assert.equal((await request('POST', '/api/admin/operations/scopes', 'admin', mutation(11, { coordinatorId: 'coordinator', clientId: 'client2', assigned: true, reason: 'fixture' }))).status, 200);
+  assert.equal((await request('POST', '/api/admin/operations/scopes', 'admin', mutation(12, { coordinatorId: 'coordinator', clientId: 'client-expired', assigned: true, reason: 'fixture' }))).status, 200);
+  for (const [n, clientId] of [[13, 'client'], [14, 'client2']]) assert.equal((await request('POST', '/api/admin/commercial/operations/confirm', 'coordinator', mutation(n, { clientId, kind: 'MONTHLY', reference: `fixture-${clientId}`, reason: 'fixture' }))).status, 200);
+  assert.equal((await request('POST', '/api/admin/commercial/operations/confirm', 'coordinator', mutation(15, { clientId: 'client-expired', kind: 'CUSTOM', customStartPanama: '2020-01-01', customEndPanamaInclusive: '2020-01-02', reference: 'expired', reason: 'fixture' }))).status, 200);
+  const connect = async (n, trainer, client, inviteSetVersion = 0) => {
+    const invite = await request('POST', '/api/trainer/invitations', trainer, mutation(n, { knownClientId: client, commercialName: `${client} minimum`, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: historyEnd }] }, inviteSetVersion));
+    assert.equal(invite.status, 200);
+    const accepted = await request('POST', '/api/invitations/accept', client, mutation(n + 1, { token: invite.body.result.token, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: historyEnd }] }, invite.body.versionTokens.find(token => token.kind === 'INVITATION').version));
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body)); return accepted.body;
+  };
+  const relation = await connect(20, 'trainer', 'client'); const otherRelation = await connect(30, 'trainer2', 'client2');
+  const expiredRelation = await connect(35, 'trainer', 'client-expired', 1);
+  const expiredClientRelations = await request('GET', '/api/client/relations', 'client-expired');
+  assert.equal(expiredClientRelations.status, 200); assert.deepEqual(expiredClientRelations.body.relations.find(item => item.relationId === expiredRelation.result.relationId).trainer, { id: 'trainer' }, 'relation metadata keeps only the owned trainer literal even without current CLIENT entitlement');
+  assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(37, { relationId: expiredRelation.result.relationId, exercises: [exercise] }))).status, 403, 'expired client entitlement blocks publication');
+  const emptyHistory = await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(emptyHistory.status, 200); assert.deepEqual(emptyHistory.body.items, [], 'consent without a published snapshot never reads live personal JSON');
+  const grants = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(40, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'HISTORY', startUtc: '2026-01-02T00:00:00.000Z', endExclusiveUtc: historyEnd }] }, relation.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(grants.status, 200, JSON.stringify(grants.body));
+  const historyWithoutExecution = await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(historyWithoutExecution.status, 200); assert.ok(historyWithoutExecution.body.items.some(item => item.sourceKind === 'LEGACY_WORKOUT'));
+  assert.equal(JSON.stringify(historyWithoutExecution.body).includes('weight'), false, 'HISTORY alone redacts bodyweight');
+  assert.equal((await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer2')).status, 404, 'cross-portfolio ids do not authorize reads or identify the relation');
+  assert.equal((await request('GET', `/api/trainer/bodyweight?relationId=${relation.result.relationId}`, 'trainer')).status, 403, 'WEIGHT is independent from HISTORY');
+  const goal = await request('POST', '/api/trainer/goals/publish', 'trainer', mutation(41, { relationId: relation.result.relationId, goals: [{ label: 'Consistency', kind: 'CONSISTENCY', targetSessionsPerWeek: 3 }] }));
+  assert.equal(goal.status, 200); assert.equal(schema('TrainingGoalReceipt')(goal.body), true);
+  const plan = await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(42, { relationId: relation.result.relationId, goalVersionId: goal.body.result.goalVersionId, exercises: [exercise] }));
+  assert.equal(plan.status, 200); assert.equal(schema('TrainingPlanReceipt')(plan.body), true);
+  const currentPlan = await request('GET', '/api/client/plan/current', 'client');
+  assert.equal(currentPlan.status, 200); assert.deepEqual(currentPlan.body.versionTokens.map(token => token.kind), ['SESSION_SET'], 'current plan exposes only the actionable session-set token');
+  const trainerPlan = await request('GET', `/api/trainer/plans/current?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(trainerPlan.status, 200, JSON.stringify(trainerPlan.body));
+  assert.equal(trainerPlan.body.plan.id, plan.body.result.planVersionId);
+  assert.deepEqual(trainerPlan.body.versionTokens.map(token => token.kind), ['PLAN_SET']);
+  const trainerGoals = await request('GET', `/api/trainer/goals/current?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(trainerGoals.status, 200, JSON.stringify(trainerGoals.body));
+  assert.equal(trainerGoals.body.goals.id, goal.body.result.goalVersionId);
+  assert.deepEqual(trainerGoals.body.versionTokens.map(token => token.kind), ['GOAL_SET']);
+  assert.equal((await request('GET', `/api/trainer/plans/current?relationId=${relation.result.relationId}`, 'trainer2')).status, 404, 'another trainer cannot discover another relation plan');
+  assert.equal((await request('GET', `/api/trainer/goals/current?relationId=${expiredRelation.result.relationId}`, 'trainer')).status, 403, 'expired client entitlement cuts trainer producer reads');
+  assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer2', mutation(43, { relationId: relation.result.relationId, exercises: [exercise] }))).status, 403, 'trainer cannot publish into another portfolio');
+  assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(43, { relationId: relation.result.relationId, exercises: [exercise] }))).status, 409, 'operation id cannot be reused with another authority intent');
+  assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(44, { relationId: relation.result.relationId, exercises: [exercise] }, 0))).status, 409, 'stale plan aggregate version is rejected');
+  const started = await request('POST', '/api/client/sessions/start', 'client', mutation(45, { planVersionId: plan.body.result.planVersionId }));
+  assert.equal(started.status, 200); assert.equal(schema('TrainingSessionStartReceipt')(started.body), true);
+  const recovered = await request('GET', '/api/client/sessions/current', 'client');
+  assert.equal(recovered.status, 200); assert.equal(recovered.body.session.sessionId, started.body.result.sessionId);
+  assert.deepEqual(recovered.body.session.snapshot, started.body.result.snapshot);
+  assert.deepEqual(recovered.body.versionTokens.map(token => token.kind), ['SESSION', 'SESSION_SET']);
+  const entry = started.body.result.snapshot.exercises[0];
+  const finishBody = mutation(46, { sessionId: recovered.body.session.sessionId, entries: [{ planEntryId: entry.entryId, exerciseId: entry.exerciseId, disposition: 'PERFORMED', sets: [{ phase: 'work', completed: true, reps: 8 }] }] }, recovered.body.versionTokens.find(token => token.kind === 'SESSION').version);
+  const finished = await request('POST', '/api/client/sessions/finish', 'client', finishBody);
+  assert.equal(finished.status, 200); assert.equal(schema('TrainingFinishReceipt')(finished.body), true);
+  assert.equal((await request('GET', '/api/client/sessions/current', 'client')).body.session, null);
+  assert.equal(JSON.stringify(finished.body).includes('health'), false); assert.equal(JSON.stringify(finished.body).includes('audit'), false);
+  const customGoal = await request('POST', '/api/trainer/goals/publish', 'trainer', mutation(461, { relationId: relation.result.relationId, goals: [{ label: 'Owned custom', kind: 'PERFORMANCE', exerciseId: 'cx-owned', targetLoad: { kind: 'BODY_WEIGHT' }, targetReps: 8 }] }, goal.body.versionTokens.find(token => token.kind === 'GOAL_SET').version));
+  assert.equal(customGoal.status, 200, JSON.stringify(customGoal.body));
+  const customPlan = await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(462, { relationId: relation.result.relationId, goalVersionId: customGoal.body.result.goalVersionId, exercises: [{ ...exercise, exerciseId: 'cx-owned' }] }, plan.body.versionTokens.find(token => token.kind === 'PLAN_SET').version));
+  assert.equal(customPlan.status, 200, JSON.stringify(customPlan.body));
+  assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer2', mutation(463, { relationId: otherRelation.result.relationId, exercises: [{ ...exercise, exerciseId: 'cx-owned' }] }))).status, 400, 'a literal custom ID belongs only to its subject');
+  assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(464, { relationId: relation.result.relationId, exercises: [{ ...exercise, exerciseId: 'cx-unknown' }] }, customPlan.body.versionTokens.find(token => token.kind === 'PLAN_SET').version))).status, 400, 'unknown custom IDs never use a prefix fallback');
+  const customStarted = await request('POST', '/api/client/sessions/start', 'client', mutation(465, { planVersionId: customPlan.body.result.planVersionId }, 1));
+  assert.equal(customStarted.status, 200, JSON.stringify(customStarted.body));
+  const customEntry = customStarted.body.result.snapshot.exercises[0];
+  const customFinish = await request('POST', '/api/client/sessions/finish', 'client', mutation(466, { sessionId: customStarted.body.result.sessionId, entries: [
+    { planEntryId: customEntry.entryId, exerciseId: '0025', disposition: 'SUBSTITUTED', sets: [{ phase: 'work', completed: true, reps: 8 }] },
+    { exerciseId: 'cx-owned', disposition: 'ADDED', sets: [{ phase: 'work', completed: true, reps: 8 }] }
+  ] }, customStarted.body.versionTokens.find(token => token.kind === 'SESSION').version));
+  assert.equal(customFinish.status, 200, JSON.stringify(customFinish.body));
+  running.child.kill('SIGKILL'); await new Promise(resolve => running.child.once('exit', resolve)); running = start(dataDir); base = await running.base;
+  const replay = await request('POST', '/api/client/sessions/finish', 'client', finishBody);
+  assert.equal(replay.status, 200); assert.equal(replay.body.replayed, true); assert.equal(replay.body.result.executionId, finished.body.result.executionId);
+  const own = await request('GET', '/api/client/executions', 'client'); assert.equal(own.status, 200); assert.equal(own.body.items.length, 2);
+  const trainerActuals = await request('GET', `/api/trainer/executions?relationId=${relation.result.relationId}`, 'trainer'); assert.equal(trainerActuals.status, 200); assert.equal(trainerActuals.body.items.length, 2);
+  assert.equal((await request('GET', '/api/client/executions?unexpected=true', 'client')).status, 400, 'training reads reject unknown query keys');
+  const ownFirstPage = await request('GET', '/api/client/executions?limit=1', 'client');
+  assert.equal(ownFirstPage.status, 200); assert.ok(ownFirstPage.body.nextCursor);
+  assert.equal((await request('GET', `/api/trainer/executions?relationId=${relation.result.relationId}&cursor=${encodeURIComponent(ownFirstPage.body.nextCursor)}`, 'trainer')).status, 400, 'cursor MAC binds actor and collection');
+  const secondStart = await request('POST', '/api/client/sessions/start', 'client', mutation(47, { planVersionId: plan.body.result.planVersionId }, 2));
+  assert.equal(secondStart.status, 200);
+  const abandoned = await request('POST', '/api/client/sessions/abandon', 'client', mutation(48, { sessionId: secondStart.body.result.sessionId }, secondStart.body.versionTokens.find(token => token.kind === 'SESSION').version));
+  assert.equal(abandoned.status, 200); assert.equal(schema('TrainingAbandonReceipt')(abandoned.body), true);
+  assert.equal((await request('GET', '/api/client/executions', 'client')).body.items.length, 2, 'abandon never fakes a finish');
+  assert.equal(panamaDateAtServerClock(() => new Date('2026-10-31T00:07:00.000Z')), '2026-10-30', 'business day must not switch at UTC midnight');
+  const futureDate = panamaDateAtServerClock(() => new Date(Date.now() + 2 * 86400000));
+  const futureWeight = await request('POST', '/api/client/bodyweight', 'client', mutation(490, { weight: 79.5, unit: 'KG', reportedDatePanama: futureDate }));
+  assert.equal(futureWeight.status, 400, 'future business dates remain rejected');
+  const bodyweight = await request('POST', '/api/client/bodyweight', 'client', mutation(49, { weight: 79.5, unit: 'KG', reportedDatePanama: panamaDateAtServerClock() }));
+  assert.equal(bodyweight.status, 200); assert.equal(schema('TrainingBodyweightReceipt')(bodyweight.body), true);
+  const ownBodyweight = await request('GET', '/api/client/bodyweight', 'client');
+  assert.equal(ownBodyweight.status, 200); assert.deepEqual(ownBodyweight.body.versionTokens.map(token => token.kind), ['BODYWEIGHT_SET']);
+  const weighted = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(50, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'WEIGHT' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: historyEnd, includeWeight: true }] }, grants.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(weighted.status, 200);
+  const trainerWeight = await request('GET', `/api/trainer/bodyweight?relationId=${relation.result.relationId}`, 'trainer'); assert.equal(trainerWeight.status, 200); assert.equal(trainerWeight.body.items.length, 0, 'a current WEIGHT grant never implicitly reshares pre-consent bodyweight');
+  const continuityWeight = await request('POST', '/api/client/bodyweight', 'client', mutation(505, { weight: 79, unit: 'KG', reportedDatePanama: panamaDateAtServerClock() }, ownBodyweight.body.versionTokens.find(token => token.kind === 'BODYWEIGHT_SET').version));
+  assert.equal(continuityWeight.status, 200);
+  const executionsBeforeHistoryAdd = (await request('GET', `/api/trainer/executions?relationId=${relation.result.relationId}`, 'trainer')).body.items.length;
+  const weightsBeforeHistoryAdd = (await request('GET', `/api/trainer/bodyweight?relationId=${relation.result.relationId}`, 'trainer')).body.items.length;
+  const historyAdded = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(506, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'WEIGHT' }, { kind: 'HISTORY', startUtc: '2024-01-01T00:00:00.000Z', endExclusiveUtc: '2025-01-01T00:00:00.000Z' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: historyEnd, includeWeight: true }] }, weighted.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(historyAdded.status, 200, JSON.stringify(historyAdded.body));
+  const executionsAfterHistoryAdd = (await request('GET', `/api/trainer/executions?relationId=${relation.result.relationId}`, 'trainer')).body.items.length;
+  const weightsAfterHistoryAdd = (await request('GET', `/api/trainer/bodyweight?relationId=${relation.result.relationId}`, 'trainer')).body.items.length;
+  assert.equal(executionsAfterHistoryAdd, executionsBeforeHistoryAdd, 'adding HISTORY keeps previously visible EXECUTION rows');
+  assert.equal(weightsAfterHistoryAdd, weightsBeforeHistoryAdd, 'adding HISTORY keeps previously visible WEIGHT rows');
+  const weightRevoked = await request('POST', '/api/client/relations/grants/revoke', 'client', mutation(500, { relationId: relation.result.relationId, kind: 'WEIGHT', reason: 'private interval' }, historyAdded.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(weightRevoked.status, 200);
+  const privateGap = await request('POST', '/api/client/bodyweight', 'client', mutation(501, { weight: 78, unit: 'KG', reportedDatePanama: panamaDateAtServerClock() }, continuityWeight.body.versionTokens.find(token => token.kind === 'BODYWEIGHT_SET').version));
+  assert.equal(privateGap.status, 200, 'the paid owner can record private bodyweight after individual WEIGHT revocation');
+  const regrantedWeight = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(502, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'WEIGHT' }] }, weightRevoked.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(regrantedWeight.status, 200);
+  const hiddenGap = await request('GET', `/api/trainer/bodyweight?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(hiddenGap.status, 200); assert.deepEqual(hiddenGap.body.items, [], 'WEIGHT regrant without HISTORY does not revive the private interval');
+  const freshWeight = await request('POST', '/api/client/bodyweight', 'client', mutation(503, { weight: 77, unit: 'KG', reportedDatePanama: panamaDateAtServerClock() }, privateGap.body.versionTokens.find(token => token.kind === 'BODYWEIGHT_SET').version));
+  assert.equal(freshWeight.status, 200);
+  const visibleFreshWeight = await request('GET', `/api/trainer/bodyweight?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(visibleFreshWeight.status, 200); assert.deepEqual(visibleFreshWeight.body.items.map(item => item.weight), [77], 'only bodyweight received after the new WEIGHT consent is readable');
+  const historyReshare = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(504, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'WEIGHT' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: new Date().toISOString(), includeWeight: true }] }, regrantedWeight.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(historyReshare.status, 200, JSON.stringify(historyReshare.body));
+  const trainerRelationMetadata = await request('GET', '/api/trainer/relations', 'trainer');
+  const historyGrant = trainerRelationMetadata.body.relations.find(item => item.relationId === relation.result.relationId).grants.find(item => item.kind === 'HISTORY' && item.state === 'ACTIVE');
+  assert.equal(typeof historyGrant.grantId, 'string'); assert.equal(typeof historyGrant.eligibleFromUtc, 'string'); assert.equal(JSON.stringify(trainerRelationMetadata.body).includes('projection_json'), false);
+  const explicitlyReshared = await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}&grantId=${historyGrant.grantId}`, 'trainer');
+  assert.equal(explicitlyReshared.status, 200); assert.equal(explicitlyReshared.body.items.some(item => item.sourceKind === 'SQLITE_BODY_WEIGHT' && item.value === 78), true, 'the former private gap appears only in the separately selected HISTORY range');
+  const beforeStaleStart = await request('GET', '/api/client/sessions/current', 'client');
+  const staleStarted = await request('POST', '/api/client/sessions/start', 'client', mutation(491, { planVersionId: plan.body.result.planVersionId }, beforeStaleStart.body.versionTokens.find(token => token.kind === 'SESSION_SET').version));
+  assert.equal(staleStarted.status, 200, JSON.stringify(staleStarted.body));
+  const suspended = await request('POST', '/api/trainer/relations/suspend', 'trainer', mutation(492, { relationId: relation.result.relationId, reason: 'recovery window probe' }, historyReshare.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(suspended.status, 200, JSON.stringify(suspended.body));
+  const reactivationRequested = await request('POST', '/api/trainer/relations/reactivate-request', 'trainer', mutation(493, { relationId: relation.result.relationId, reason: 'client approval' }, suspended.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(reactivationRequested.status, 200, JSON.stringify(reactivationRequested.body));
+  const reactivated = await request('POST', '/api/client/relations/reactivate-accept', 'client', mutation(494, { relationId: relation.result.relationId, reason: 'approved' }, reactivationRequested.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(reactivated.status, 200, JSON.stringify(reactivated.body));
+  const regranted = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(495, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'WEIGHT' }] }, reactivated.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(regranted.status, 200, JSON.stringify(regranted.body));
+  const stale = await request('GET', '/api/client/sessions/current', 'client');
+  assert.equal(stale.status, 200); assert.equal(stale.body.session, null);
+  assert.deepEqual(stale.body.closeOnlySession, { sessionId: staleStarted.body.result.sessionId, state: 'OPEN' });
+  assert.equal(JSON.stringify(stale.body).includes('snapshot'), false, 'a closed original window never leaks the old prescription');
+  assert.deepEqual(stale.body.versionTokens.map(token => token.kind), ['SESSION', 'SESSION_SET']);
+  const staleEntry = staleStarted.body.result.snapshot.exercises[0];
+  const deniedFinish = await request('POST', '/api/client/sessions/finish', 'client', mutation(496, { sessionId: staleStarted.body.result.sessionId, entries: [{ planEntryId: staleEntry.entryId, exerciseId: staleEntry.exerciseId, disposition: 'PERFORMED', sets: [{ phase: 'work', completed: true, reps: 8 }] }] }, stale.body.versionTokens.find(token => token.kind === 'SESSION').version));
+  assert.equal(deniedFinish.status, 403, JSON.stringify(deniedFinish.body));
+  assert.equal((await request('GET', '/api/client/executions', 'client')).body.items.length, 2, 'denied stale finishes roll back without an execution');
+  const staleClosed = await request('POST', '/api/client/sessions/abandon', 'client', mutation(497, { sessionId: stale.body.closeOnlySession.sessionId }, stale.body.versionTokens.find(token => token.kind === 'SESSION').version));
+  assert.equal(staleClosed.status, 200, JSON.stringify(staleClosed.body));
+  const afterClose = await request('GET', '/api/client/sessions/current', 'client');
+  const freshStarted = await request('POST', '/api/client/sessions/start', 'client', mutation(498, { planVersionId: plan.body.result.planVersionId }, afterClose.body.versionTokens.find(token => token.kind === 'SESSION_SET').version));
+  assert.equal(freshStarted.status, 200); assert.notEqual(freshStarted.body.result.snapshot.accessWindowId, staleStarted.body.result.snapshot.accessWindowId, 'a new session uses the reactivated window');
+  assert.equal((await request('POST', '/api/client/sessions/abandon', 'client', mutation(499, { sessionId: freshStarted.body.result.sessionId }, freshStarted.body.versionTokens.find(token => token.kind === 'SESSION').version))).status, 200);
+  assert.equal((await request('GET', '/api/trainer/portfolio', 'disabled-trainer')).status, 401, 'disabled actor has no usable session');
+  const revoked = await request('POST', '/api/client/relations/grants/revoke', 'client', mutation(51, { relationId: relation.result.relationId, kind: 'EXECUTION', reason: 'withdraw' }, regranted.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(revoked.status, 200); assert.equal((await request('GET', `/api/trainer/executions?relationId=${relation.result.relationId}`, 'trainer')).status, 403, 'revoked EXECUTION grant takes effect immediately');
+  const ended = await request('POST', '/api/client/relations/revoke', 'client', mutation(52, { relationId: relation.result.relationId, reason: 'end link' }, revoked.body.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(ended.status, 200); assert.equal((await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer')).status, 403, 'ended relation revokes the history link');
+  const otherEnded = await request('POST', '/api/trainer/relations/end', 'trainer2', mutation(53, { relationId: otherRelation.result.relationId, reason: 'end link' }, otherRelation.versionTokens.find(token => token.kind === 'RELATION').version));
+  assert.equal(otherEnded.status, 200);
+  assert.equal((await request('POST', '/api/admin/operations/roles', 'admin', mutation(54, { accountId: 'trainer2', roles: [], reason: 'role revoked' }, 1))).status, 200);
+  assert.equal((await request('GET', '/api/trainer/portfolio', 'trainer2')).status, 403, 'revoked trainer role is effective per request');
+});

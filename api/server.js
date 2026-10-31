@@ -40,6 +40,8 @@ import { excusedOn, nudgeFor, nudgeWindowOpen, toneOf } from './nudge.js';
 import { createAuthorityStore } from './authority-store.js';
 import { createIdentityAuthority } from './identity-authority.js';
 import { createAuthorityService } from './authority-service.js';
+import { createTrainingAuthority } from './authority-training.js';
+import { createAuthorityExport } from './authority-export.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -52,6 +54,10 @@ const RP_NAME = process.env.RP_NAME || 'openGym';
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
 const MANAGED_SUBSCRIPTIONS = /^(1|true|yes|on)$/i.test(process.env.MANAGED_SUBSCRIPTIONS || '');
+// Protected M1 transports carry this fixed contract generation.  It is deliberately checked
+// only after session+entitlement authorization, so a missing/old client marker cannot probe or
+// bypass a denial.
+const MANAGED_CONTRACT_VERSION = '1';
 // The first profile made on an instance with no profiles at all becomes its admin (#328), so a
 // fresh install has someone who can open the admin dashboard without editing ADMIN_UIDS and
 // restarting. Stored on the user record (user.admin), which isAdmin already honours. It is
@@ -72,11 +78,23 @@ function claimFirstAdmin(req, user) {
 // server — but on an instance meant for a known set of people, an entrance nobody can walk back
 // out of is still the wrong front door (#42). Default ON, so existing instances are unchanged;
 // the polarity is inverted from INVITE_ONLY because the safe default here is the permissive one.
-const ALLOW_GUEST = !/^(0|false|no|off)$/i.test(process.env.ALLOW_GUEST || '');
+const ALLOW_GUEST = !MANAGED_SUBSCRIPTIONS && !/^(0|false|no|off)$/i.test(process.env.ALLOW_GUEST || '');
 // Name-and-password sign-in next to passkeys (#118). Off by default: it adds a second way into
 // every account that opts in, so an instance has to ask for it. While it is off every password
 // route answers 404 and the app shows none of it; hashes already stored stay where they are.
 const PASSWORD_LOGIN = /^(1|true|yes|on)$/i.test(process.env.PASSWORD_LOGIN || '');
+// This fault injection is deliberately unreachable in normal runtimes. It makes the process
+// terminate at the two file/SQLite boundary points so integration tests can exercise recovery
+// with a fresh server process and the same DATA_DIR.
+const ENROLLMENT_TEST_FAILPOINT = process.env.NODE_ENV === 'test'
+  && ['before-db.json-write', 'after-db.json-write'].includes(process.env.AUTHORITY_ENROLLMENT_FAILPOINT)
+  ? process.env.AUTHORITY_ENROLLMENT_FAILPOINT
+  : '';
+function crashEnrollmentForTest(phase) {
+  if (ENROLLMENT_TEST_FAILPOINT !== phase) return;
+  process.nextTick(() => process.exit(86));
+  throw new Error(`enrollment failpoint ${phase}`);
+}
 // The language the sign-in screen, and every profile that never picked one, starts in (#303) —
 // for an instance whose people share a language. Only a tag's shape is checked here; the app
 // matches it against the languages it has and ignores one it does not know. Unset, it is left
@@ -170,15 +188,35 @@ function ownerId() {
   return db.users.find(isAdmin)?.id || null;
 }
 const isOwner = user => !!user && isAdmin(user) && user.id === ownerId();
-let authorityStore, authorityService;
+let authorityStore, authorityService, authorityTraining, authorityExport;
 try {
   authorityStore = createAuthorityStore({ dataDir: DATA });
   const authorityIdentity = createIdentityAuthority({ getUser: uid => db.users.find(user => user.id === uid) || null });
   authorityService = createAuthorityService({ store: authorityStore, identity: authorityIdentity, isAdmin: uid => isAdmin(db.users.find(user => user.id === uid)), isOwner: uid => isOwner(db.users.find(user => user.id === uid)) });
+  authorityTraining = createTrainingAuthority({
+    store: authorityStore,
+    service: authorityService,
+    identity: authorityIdentity,
+    readStateStrict,
+    resolveOwnedCustomExerciseId: (exerciseId, subjectId) => {
+      const state = readStateStrict(subjectId);
+      return !!state && typeof state === 'object' && Array.isArray(state.customEx)
+        && state.customEx.some(item => item && typeof item === 'object' && item.id === exerciseId);
+    },
+    pageCodec: trainingPage
+  });
+  authorityExport = createAuthorityExport({ store: authorityStore, authority: authorityService, identity: authorityIdentity, readLegacyData: uid => readStateStrict(uid) });
 } catch (error) {
   if (MANAGED_SUBSCRIPTIONS) throw error;
   console.error('operational authority unavailable:', error.message);
 }
+function managedTrainingEntitled(uid) {
+  if (!MANAGED_SUBSCRIPTIONS) return true;
+  try {
+    return !!authorityService?.accessSnapshot(uid, { managedSubscriptions: true }).capabilities.includes('ACCESS_PERSONAL_TRAINING');
+  } catch { return false; }
+}
+coachJobs.setEntitlementGate(managedTrainingEntitled);
 // 0600: db.json holds passkey credential material. It used to be covered by a blanket 0700 on
 // the whole directory; now that the directory stays traversable, the file carries its own mode.
 // Once the new version is on disk, a second copy of it goes to db.json.bak, the same durable
@@ -385,6 +423,7 @@ function pushEndpointError(raw) {
 // own gets nothing: the phone in the bag must not ring for a rest timed on the desktop. The
 // client re-sends its subscription with its id on every boot, so an id that changed heals there.
 async function sendPush(userId, payload, deviceId) {
+  if (MANAGED_SUBSCRIPTIONS && !managedTrainingEntitled(userId)) return;
   let subs = db.subs.filter(s => s.userId === userId);
   if (deviceId) subs = subs.filter(s => !s.deviceId || s.deviceId === deviceId);
   if (!subs.length) return;
@@ -455,6 +494,7 @@ function scheduleRestTimer(userId, deviceId, sec, lang) {
   }
   restTimers.set(k, setTimeout(() => {
     restTimers.delete(k);
+    if (MANAGED_SUBSCRIPTIONS && !managedTrainingEntitled(userId)) return;
     sendPush(userId, restTimerPush(lang), deviceId);
   }, sec * 1000));
 }
@@ -576,6 +616,7 @@ function stateSummary(uid) {
 setInterval(() => {
   for (const user of db.users) {
     if (user.disabled) continue;            // locked out everywhere, reminders included
+    if (MANAGED_SUBSCRIPTIONS && !managedTrainingEntitled(user.id)) continue;
     if (!db.subs.some(s => s.userId === user.id)) continue;
     // One user's state file is one user's problem: a shape this tick cannot read is logged and
     // skipped, not allowed to take the process — and everyone else's reminders — down with it.
@@ -626,6 +667,28 @@ function verifySig(token) {
     if (!crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expect))) return null;
   } catch { return null; }
   return payload;
+}
+// Enrollment proof is deliberately a different protocol from an account session:
+// a domain-separated MAC over an opaque nonce, accepted only from its HttpOnly
+// cookie and only by managed registration endpoints.
+const ENROLLMENT_COOKIE = SECURE ? '__Host-og-enroll' : 'og-enroll';
+function makeEnrollmentHandle() {
+  const nonce = crypto.randomBytes(32).toString('base64url');
+  const mac = crypto.createHmac('sha256', SECRET).update(`enrollment-handle-v1:${nonce}`).digest('base64url');
+  return `${nonce}.${mac}`;
+}
+function validEnrollmentHandle(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/.test(value)) return null;
+  const [nonce, mac] = value.split('.');
+  const expected = crypto.createHmac('sha256', SECRET).update(`enrollment-handle-v1:${nonce}`).digest('base64url');
+  try { return crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected)) ? value : null; } catch { return null; }
+}
+function enrollmentHandle(req) {
+  const values = cookieValues(req, ENROLLMENT_COOKIE);
+  return values.length === 1 ? validEnrollmentHandle(values[0]) : null;
+}
+function enrollmentCookie(handle) {
+  return `${ENROLLMENT_COOKIE}=${handle}; Path=/; Max-Age=900; HttpOnly;${SECURE} SameSite=Strict`;
 }
 // Session payload is `<uid>:<expiry>:<version>`, where the version is the user's `sv` counter.
 // Bumping `sv` (POST /api/logout/all) makes every cookie ever handed out for that account stop
@@ -1439,6 +1502,7 @@ const passwordRoutes = {
       if (!still()) return json(res, 401, WRONG);
     }
     audit(req, 'auth.password.ok', { user });
+    if (authorityService) authorityService.recoverEnrollmentIdentity(user.id);
     json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
   },
 
@@ -1448,10 +1512,13 @@ const passwordRoutes = {
     const body = await readBody(req);
     const name = text(body.name).trim().slice(0, 40);
     if (!name) return json(res, 400, { error: 'name required', code: 'missing' });
+    const managedInvite = MANAGED_SUBSCRIPTIONS && authorityService;
+    const inviteToken = typeof body.inviteToken === 'string' ? body.inviteToken : null;
+    if (managedInvite && !inviteToken) return json(res, 403, { error: 'invitation is unavailable', code: 'invite-invalid' });
     const code = text(body.code).trim().toUpperCase();
     const invite = () => db.invites.find(i => i.code === code && !i.usedBy && !i.revoked);
-    if (INVITE_ONLY && addressPaused(req, res, 'signup')) return;
-    if (INVITE_ONLY && !invite()) {
+    if (!managedInvite && INVITE_ONLY && addressPaused(req, res, 'signup')) return;
+    if (!managedInvite && INVITE_ONLY && !invite()) {
       audit(req, 'auth.register.denied', { ok: false, name, msg: 'invite-rejected' });
       strikeAddress(req, 'signup');
       return json(res, 403, { error: 'a valid invite code is required', code: 'invite' });
@@ -1481,7 +1548,7 @@ const passwordRoutes = {
     if (email && addressPaused(req, res, 'email')) return;
     const h = await hashPassword(body.password);
     let inv = null;
-    if (INVITE_ONLY) {
+    if (!managedInvite && INVITE_ONLY) {
       inv = invite();
       if (!inv) {
         audit(req, 'auth.register.fail', { ok: false, name, msg: 'invite-invalid' });
@@ -1495,14 +1562,38 @@ const passwordRoutes = {
     }
     // No await from here to the push: nothing can take the address between this check and it.
     if (email && emailTaken(email)) return emailRefused();
+    let enrollment = null;
+    let enrollmentChallenge = null;
+    if (managedInvite) {
+      try {
+        enrollmentChallenge = crypto.randomBytes(32).toString('base64url');
+        const handle = enrollmentHandle(req) || makeEnrollmentHandle();
+        enrollment = authorityService.reserveEnrollment({
+          token: inviteToken,
+          uid: crypto.randomBytes(12).toString('base64url'),
+          challenge: enrollmentChallenge,
+          enrollmentHandle: handle
+        });
+        authorityService.verifyEnrollment({ uid: enrollment.uid, challenge: enrollmentChallenge, enrollmentHandle: handle });
+        enrollment.handle = handle;
+      } catch (error) {
+        return json(res, 403, { error: 'invitation is unavailable', code: 'invite-invalid' });
+      }
+    }
     const created = new Date().toISOString();
-    const user = { id: crypto.randomBytes(12).toString('base64url'), name, created, pw: { h, set: created }, ...(email ? { email } : {}) };
+    if (enrollment && db.users.some(user => user.id === enrollment.uid)) {
+      return json(res, 403, { error: 'invitation is unavailable', code: 'invite-invalid' });
+    }
+    if (enrollment) crashEnrollmentForTest('before-db.json-write');
+    const user = { id: enrollment?.uid ?? crypto.randomBytes(12).toString('base64url'), name, created, pw: { h, set: created }, ...(email ? { email } : {}) };
     if (inv) { user.invitedBy = inv.code; inv.usedBy = user.id; inv.usedAt = created; }
     claimFirstAdmin(req, user);
     db.users.push(user);
     saveDb();
+    if (enrollment) crashEnrollmentForTest('after-db.json-write');
+    if (enrollment) authorityService.completeEnrollment({ uid: enrollment.uid, challenge: enrollmentChallenge, enrollmentHandle: enrollment.handle });
     audit(req, 'auth.register.ok', { user, msg: inv ? inv.code + ' · password' : 'password' });
-    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
+    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': enrollment ? [...sessionCookie(user), enrollmentCookie(enrollment.handle)] : sessionCookie(user) });
   },
 
   // What Settings shows: whether a password is set, and whether it could be removed.
@@ -2102,6 +2193,85 @@ const mediaRoutes = {
 // healthy, and the poll after that does not.
 const DATA_PROBE_MS = 5000;
 let dataProbe = { at: 0, ok: false };
+function authorityFailure(res, error, uniformInvite = false, extraHeaders) {
+  const known = new Set(['conflict', 'invite-expired', 'invite-invalid', 'not-found', 'unauthenticated', 'forbidden', 'validation-error', 'policy-not-configured']);
+  const code = known.has(error?.code) ? error.code : 'validation-error';
+  if (uniformInvite && ['invite-invalid', 'not-found', 'forbidden'].includes(code)) return json(res, 404, { error: 'not found', code: 'invite-invalid' }, extraHeaders);
+  const status = code === 'conflict' ? 409 : code === 'invite-expired' ? 410 : code === 'not-found' ? 404 : code === 'unauthenticated' ? 401 : code === 'forbidden' ? 403 : 400;
+  return json(res, status, { error: status === 404 ? 'not found' : code === 'forbidden' ? 'forbidden' : code === 'unauthenticated' ? 'not signed in' : 'invalid request', code }, extraHeaders);
+}
+function authorityRelation(action, admin = false) {
+  return async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityService.changeRelation({ actorId: user.id, body, action, admin, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  };
+}
+async function authorityGrants(req, res, action) {
+  const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+  if (!authorityService || !authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+  const body = await readBody(req); try { json(res, 200, action === 'replace' ? authorityTraining.replaceGrants({ actorId: user.id, body, requestId: crypto.randomUUID() }) : authorityService.revokeGrant({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+}
+async function authorityRead(req, res, kind) {
+  const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+  if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+  try {
+    const page = pageRequest(req, user.id, kind);
+    const result = kind === 'portfolio' ? authorityService.trainerPortfolio(user.id, page) : kind === 'relations' ? authorityService.trainerRelations(user.id, page) : authorityService.commercialClients(user.id, page);
+    const items = kind === 'portfolio' ? result.portfolio : kind === 'relations' ? result.relations : result.clients;
+    const versionTokens = items.map(row => kind === 'commercial'
+      ? { kind: 'SUBSCRIPTION', key: JSON.stringify([row.clientId]), version: row.entitlement.version }
+      : { kind: 'RELATION', key: JSON.stringify([row.relationId]), version: row.version });
+    json(res, 200, { [kind === 'commercial' ? 'clients' : kind]: items, nextCursor: pageCursor(user.id, kind, result.nextOffset, result.hasMore), versionTokens, requestId: crypto.randomUUID() });
+  } catch (error) { authorityFailure(res, error); }
+}
+function pageRequest(req, actorId, collection) {
+  const invalid = () => { const error = new Error('validation-error'); error.code = 'validation-error'; return error; };
+  const query = new URL(req.url, 'http://x').searchParams;
+  if ([...query.keys()].some(key => key !== 'limit' && key !== 'cursor')) throw invalid();
+  return pageCursorRequest({ actorId, collection, cursor: query.get('cursor'), limit: query.get('limit') });
+}
+function pageCursorRequest({ actorId, collection, cursor, limit }) {
+  const invalid = () => { const error = new Error('validation-error'); error.code = 'validation-error'; return error; };
+  const rawLimit = limit;
+  const parsedLimit = rawLimit === null || rawLimit === undefined ? 25 : Number(rawLimit);
+  if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) throw invalid();
+  let offset = 0;
+  if (cursor) {
+    const [encoded, mac] = cursor.split('.');
+    const expected = crypto.createHmac('sha256', SECRET).update(`authority-cursor-v2:${actorId}:${collection}:id:${encoded}`).digest('base64url');
+    if (!encoded || !mac || mac.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) throw invalid();
+    try { offset = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')).offset; } catch { throw invalid(); }
+    if (!Number.isInteger(offset) || offset < 0) throw invalid();
+  }
+  return { limit: parsedLimit, offset };
+}
+function pageCursor(actorId, collection, offset, hasMore) {
+  if (!hasMore) return null;
+  const encoded = Buffer.from(JSON.stringify({ offset })).toString('base64url');
+  const mac = crypto.createHmac('sha256', SECRET).update(`authority-cursor-v2:${actorId}:${collection}:id:${encoded}`).digest('base64url');
+  return `${encoded}.${mac}`;
+}
+function scopedPage(req, actorId, collection, rows) {
+  const { limit, offset } = pageRequest(req, actorId, collection);
+  const items = rows.slice(offset, offset + limit);
+  const nextOffset = offset + items.length;
+  const nextCursor = pageCursor(actorId, collection, nextOffset, nextOffset < rows.length);
+  return { items, nextCursor };
+}
+function trainingPage({ actorId, collection, rows, cursor, limit }) {
+  const page = pageCursorRequest({ actorId, collection, cursor, limit });
+  const items = rows.slice(page.offset, page.offset + page.limit);
+  const nextOffset = page.offset + items.length;
+  return { items, nextCursor: pageCursor(actorId, collection, nextOffset, nextOffset < rows.length) };
+}
+function trainingQuery(req, allowed) {
+  const query = new URL(req.url, 'http://x').searchParams;
+  if ([...query.keys()].some(key => !allowed.includes(key))) {
+    const error = new Error('validation-error'); error.code = 'validation-error'; throw error;
+  }
+  return query;
+}
 function dataWritable() {
   const now = Date.now();
   if (dataProbe.at && now - dataProbe.at < DATA_PROBE_MS) return dataProbe.ok;
@@ -2131,7 +2301,7 @@ const routes = {
   'GET /api/admin/operations/users': async (req, res) => {
     const admin = requireAdmin(req, res); if (!admin) return;
     if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
-    const users = db.users.filter(user => !user.deleted).map(user => ({ account: { id: user.id }, roles: authorityStore.db.prepare('SELECT role FROM operational_roles WHERE account_id=? AND removed_at_utc IS NULL ORDER BY role').all(user.id).map(row => row.role), version: authorityStore.getAggregateVersion('ROLES', JSON.stringify([user.id])) }));
+    const users = db.users.filter(user => !user.deleted).map(user => ({ account: { id: user.id }, roles: authorityStore.db.prepare('SELECT role FROM operational_roles WHERE account_id=? AND removed_at_utc IS NULL ORDER BY role').all(user.id).map(row => row.role), pendingOperationalRole: authorityService.enrollmentMetadata(user.id), version: authorityStore.getAggregateVersion('ROLES', JSON.stringify([user.id])) }));
     json(res, 200, { users, requestId: crypto.randomUUID() });
   },
   'POST /api/admin/operations/roles': async (req, res) => {
@@ -2147,6 +2317,166 @@ const routes = {
     const body = await readBody(req);
     try { json(res, 200, authorityService.setScope({ actorId: admin.id, body, requestId: crypto.randomUUID() })); }
     catch (error) { json(res, error.code === 'conflict' ? 409 : error.code === 'forbidden' ? 403 : 400, { error: error.message, code: error.code || 'validation-error' }); }
+  },
+  'GET /api/admin/operations/scopes': async (req, res) => {
+    const admin = requireAdmin(req, res); if (!admin) return;
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const query = new URL(req.url, 'http://x').searchParams;
+    const allowed = new Set(['coordinatorId', 'clientId', 'limit', 'cursor']);
+    if ([...query.keys()].some(key => !allowed.has(key))) return json(res, 400, { error: 'validation error', code: 'validation-error' });
+    try {
+      const page = pageCursorRequest({ actorId: admin.id, collection: 'admin-scopes', cursor: query.get('cursor'), limit: query.get('limit') });
+      const result = authorityService.scopePairs(admin.id, query.get('coordinatorId') || undefined, query.get('clientId') || undefined, page);
+      json(res, 200, { scopes: result.scopes, nextCursor: pageCursor(admin.id, 'admin-scopes', page.offset + result.scopes.length, result.hasMore), requestId: crypto.randomUUID() });
+    } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/trainer/invitations': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityService.createInvitation({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/trainer/invitations/replace': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityService.replaceInvitation({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/invitations': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try {
+      const page = pageRequest(req, user.id, 'trainer-invitations');
+      const result = authorityService.trainerInvitations(user.id, page);
+      json(res, 200, { invitations: result.invitations, nextCursor: pageCursor(user.id, 'trainer-invitations', page.offset + result.invitations.length, result.hasMore), versionTokens: result.versionTokens, requestId: crypto.randomUUID() });
+    } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/invitations/preview': async (req, res) => {
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityService.previewInvitation(body)); } catch (error) { authorityFailure(res, error, true); }
+  },
+  'POST /api/invitations/accept': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityService.acceptInvitation({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/invitations/reject': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    const body = await readBody(req); try { json(res, 200, authorityService.invitationDecision({ actorId: user.id, body, action: 'reject', requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error, true); }
+  },
+  'POST /api/trainer/invitations/revoke': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    const body = await readBody(req); try { json(res, 200, authorityService.invitationDecision({ actorId: user.id, body, action: 'revoke', requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/trainer/relations/confirm': authorityRelation('confirm'),
+  'POST /api/client/relations/revoke': authorityRelation('revoke'),
+  'POST /api/trainer/relations/suspend': authorityRelation('suspend'),
+  'POST /api/trainer/relations/end': authorityRelation('end'),
+  'POST /api/trainer/relations/reactivate-request': authorityRelation('reactivate-request'),
+  'POST /api/client/relations/reactivate-accept': authorityRelation('reactivate-accept'),
+  'POST /api/admin/relations/suspend': authorityRelation('suspend', true),
+  'POST /api/admin/relations/end': authorityRelation('end', true),
+  'POST /api/admin/relations/reactivate-request': authorityRelation('reactivate-request', true),
+  'POST /api/client/relations/grants/replace': async (req, res) => authorityGrants(req, res, 'replace'),
+  'POST /api/client/relations/grants/revoke': async (req, res) => authorityGrants(req, res, 'revoke'),
+  'POST /api/client/exports': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityExport) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req);
+    try { json(res, 200, authorityExport.requestExport({ actorId: user.id, body, requestId: crypto.randomUUID() }), { 'Cache-Control': 'private, no-store' }); } catch (error) { authorityFailure(res, error, false, { 'Cache-Control': 'private, no-store' }); }
+  },
+  'GET /api/client/exports/{jobId}': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }, { 'Cache-Control': 'private, no-store' });
+    if (!authorityExport) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }, { 'Cache-Control': 'private, no-store' });
+    try {
+      const document = await authorityExport.downloadExport({ actorId: user.id, jobId: req.exportJobId });
+      json(res, 200, document, { 'Cache-Control': 'private, no-store', 'Content-Disposition': 'attachment; filename="opengym-owned-export.json"', 'X-Content-Type-Options': 'nosniff' });
+    } catch (error) { authorityFailure(res, error, false, { 'Cache-Control': 'private, no-store' }); }
+  },
+  'POST /api/client/deletion-requests': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityExport) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req);
+    try { json(res, 200, authorityExport.requestDeletion({ actorId: user.id, body, requestId: crypto.randomUUID() }), { 'Cache-Control': 'private, no-store' }); } catch (error) { authorityFailure(res, error, false, { 'Cache-Control': 'private, no-store' }); }
+  },
+  'GET /api/client/relations': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' });
+    if (!authorityService) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try {
+      const page = pageRequest(req, user.id, 'client-relations');
+      const result = authorityService.clientRelations(user.id, page);
+      const versionTokens = result.relations.map(row => ({ kind: 'RELATION', key: JSON.stringify([row.relationId]), version: row.version }));
+      json(res, 200, { relations: result.relations, nextCursor: pageCursor(user.id, 'client-relations', page.offset + result.relations.length, result.hasMore), versionTokens, requestId: crypto.randomUUID() });
+    } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/portfolio': async (req, res) => authorityRead(req, res, 'portfolio'),
+  'GET /api/trainer/relations': async (req, res) => authorityRead(req, res, 'relations'),
+  'POST /api/admin/commercial/operations/confirm': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); const body = await readBody(req);
+    try { json(res, 200, authorityService.confirmCommercialOperation({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/admin/commercial/clients': async (req, res) => authorityRead(req, res, 'commercial'),
+  'POST /api/trainer/plans/publish': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityTraining.publishPlan({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/trainer/goals/publish': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    const body = await readBody(req); try { json(res, 200, authorityTraining.publishGoals({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/client/plan/current': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try { json(res, 200, authorityTraining.current(user.id)); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/plans/current': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try { const query = trainingQuery(req, ['relationId']); const relationId = query.get('relationId'); if (!relationId) throw Object.assign(new Error('validation-error'), { code: 'validation-error' }); json(res, 200, authorityTraining.trainerCurrentPlan(user.id, relationId)); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/goals/current': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try { const query = trainingQuery(req, ['relationId']); const relationId = query.get('relationId'); if (!relationId) throw Object.assign(new Error('validation-error'), { code: 'validation-error' }); json(res, 200, authorityTraining.trainerCurrentGoals(user.id, relationId)); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/client/sessions/current': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try { json(res, 200, authorityTraining.currentSession(user.id)); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/client/sessions/start': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }); const body = await readBody(req);
+    try { json(res, 200, authorityTraining.startSession({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/client/sessions/finish': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }); const body = await readBody(req);
+    try { json(res, 200, authorityTraining.finishSession({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/client/sessions/abandon': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }); const body = await readBody(req);
+    try { json(res, 200, authorityTraining.abandonSession({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/client/executions': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    let q; try { q = trainingQuery(req, ['cursor', 'limit']); } catch (error) { return authorityFailure(res, error); }
+    try { json(res, 200, authorityTraining.ownExecutions(user.id, q.get('cursor'), q.get('limit') ?? 25)); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/executions': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    let q; try { q = trainingQuery(req, ['relationId', 'cursor', 'limit']); } catch (error) { return authorityFailure(res, error); }
+    try { json(res, 200, authorityTraining.trainerExecutions(user.id, q.get('relationId'), q.get('cursor'), q.get('limit') ?? 25)); } catch (error) { authorityFailure(res, error); }
+  },
+  'POST /api/client/bodyweight': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }); const body = await readBody(req);
+    try { json(res, 200, authorityTraining.bodyweight({ actorId: user.id, body, requestId: crypto.randomUUID() })); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/client/bodyweight': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    try { json(res, 200, authorityTraining.ownBodyweight(user.id)); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/bodyweight': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    let q; try { q = trainingQuery(req, ['relationId', 'cursor', 'limit']); } catch (error) { return authorityFailure(res, error); }
+    try { json(res, 200, authorityTraining.trainerBodyweight(user.id, q.get('relationId'), q.get('cursor'), q.get('limit') ?? 25)); } catch (error) { authorityFailure(res, error); }
+  },
+  'GET /api/trainer/history': async (req, res) => {
+    const user = readSession(req); if (!user) return json(res, 401, { error: 'not signed in', code: 'unauthenticated' }); if (!authorityTraining) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' });
+    let q; try { q = trainingQuery(req, ['relationId', 'grantId', 'cursor', 'limit']); } catch (error) { return authorityFailure(res, error); }
+    try { json(res, 200, authorityTraining.trainerHistory(user.id, q.get('relationId'), q.get('grantId'), q.get('cursor'), q.get('limit') ?? 25)); } catch (error) { authorityFailure(res, error); }
   },
   // 503 rather than a flag in a 200: the container healthcheck is `wget --spider`, which reads
   // the status and nothing else, and an instance that cannot write its data directory is exactly
@@ -2177,6 +2507,7 @@ const routes = {
     // that has no Coach. The key's absence is that answer.
     json(res, 200, {
       invite_only: INVITE_ONLY, allow_guest: ALLOW_GUEST,
+      ...(MANAGED_SUBSCRIPTIONS ? { managed_subscriptions: true } : {}),
       // Only when on, so an instance without passwords answers exactly as it did before (#118).
       ...(PASSWORD_LOGIN ? { password_login: true } : {}),
       // Public: the sign-in screen is the first thing that reads it.
@@ -2207,22 +2538,46 @@ const routes = {
     const body = await readBody(req);
     const name = text(body.name).trim().slice(0, 40);
     if (!name) return json(res, 400, { error: 'name required' });
+    const managedInvite = MANAGED_SUBSCRIPTIONS && authorityService;
+    const inviteToken = typeof body.inviteToken === 'string' ? body.inviteToken : null;
+    if (managedInvite && !inviteToken) return json(res, 403, { error: 'a valid invitation is required', code: 'invite' });
     const code = text(body.code).trim().toUpperCase();
-    if (INVITE_ONLY && !db.invites.some(i => i.code === code && !i.usedBy && !i.revoked)) {
+    if (!managedInvite && INVITE_ONLY && !db.invites.some(i => i.code === code && !i.usedBy && !i.revoked)) {
       // The rejected code itself is never recorded — a near-miss guess in the log is a liability.
       audit(req, 'auth.register.denied', { ok: false, name, msg: 'invite-rejected' });
       return json(res, 403, { error: 'a valid invite code is required', code: 'invite' });
     }
-    const uid = crypto.randomBytes(12).toString('base64url');
-    const options = await generateRegistrationOptions({
+    let uid = crypto.randomBytes(12).toString('base64url');
+    let options = await generateRegistrationOptions({
       rpName: RP_NAME, rpID: RP_ID,
       userID: Buffer.from(uid), userName: name, userDisplayName: name,
       attestationType: 'none',
       authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
       excludeCredentials: []
     });
-    const cid = putChallenge({ kind: 'register', challenge: options.challenge, name, uid, code });
-    json(res, 200, { cid, options });
+    let enrollment;
+    let issuedEnrollmentCookie = null;
+    if (managedInvite) {
+      try {
+        const handle = enrollmentHandle(req) || makeEnrollmentHandle();
+        issuedEnrollmentCookie = enrollmentHandle(req) ? null : enrollmentCookie(handle);
+        enrollment = authorityService.reserveEnrollment({ token: inviteToken, uid, challenge: options.challenge, enrollmentHandle: handle });
+        if (enrollment.uid !== uid) {
+          uid = enrollment.uid;
+          options = await generateRegistrationOptions({
+            rpName: RP_NAME, rpID: RP_ID,
+            userID: Buffer.from(uid), userName: name, userDisplayName: name,
+            attestationType: 'none',
+            authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+            excludeCredentials: []
+          });
+          enrollment = authorityService.reserveEnrollment({ token: inviteToken, uid, challenge: options.challenge, enrollmentHandle: handle });
+        }
+      }
+      catch (error) { return json(res, 403, { error: 'invitation is unavailable', code: 'invite-invalid' }); }
+    }
+    const cid = putChallenge({ kind: 'register', challenge: options.challenge, name, uid, code, enrollment });
+    json(res, 200, { cid, options }, issuedEnrollmentCookie ? { 'Set-Cookie': issuedEnrollmentCookie } : undefined);
   },
 
   'POST /api/register/verify': async (req, res) => {
@@ -2250,6 +2605,13 @@ const routes = {
       auditFail(req, 'auth.register.fail', { ok: false, name: c.name, msg: 'not-verified' });
       return json(res, 400, { error: 'not verified' });
     }
+    if (c.enrollment) {
+      try { authorityService.verifyEnrollment({ uid: c.uid, challenge: c.challenge, enrollmentHandle: enrollmentHandle(req) }); }
+      catch (error) { return json(res, 403, { error: 'invitation is unavailable', code: 'invite-invalid' }); }
+      if (db.users.some(user => user.id === c.uid)) {
+        return json(res, 403, { error: 'invitation is unavailable', code: 'invite-invalid' });
+      }
+    }
     const { credential } = verification.registrationInfo;
     if (db.creds.find(x => x.id === credential.id)) {
       audit(req, 'auth.register.fail', { ok: false, name: c.name, msg: 'credential-exists' });
@@ -2257,13 +2619,14 @@ const routes = {
     }
     // Re-check the invite at the last moment (it may have been used/revoked since options), then burn it.
     let invite = null;
-    if (INVITE_ONLY) {
+    if (!c.enrollment && INVITE_ONLY) {
       invite = db.invites.find(i => i.code === c.code && !i.usedBy && !i.revoked);
       if (!invite) {
         audit(req, 'auth.register.fail', { ok: false, name: c.name, msg: 'invite-invalid' });
         return json(res, 403, { error: 'invite code is no longer valid, ask for a new one', code: 'invite' });
       }
     }
+    if (c.enrollment) crashEnrollmentForTest('before-db.json-write');
     const user = { id: c.uid, name: c.name, created: new Date().toISOString() };
     if (invite) { user.invitedBy = invite.code; invite.usedBy = user.id; invite.usedAt = user.created; }
     claimFirstAdmin(req, user);
@@ -2277,6 +2640,8 @@ const routes = {
       created: user.created, lastUsed: user.created
     });
     saveDb();
+    if (c.enrollment) crashEnrollmentForTest('after-db.json-write');
+    if (c.enrollment) authorityService.completeEnrollment({ uid: c.uid, challenge: c.challenge, enrollmentHandle: enrollmentHandle(req) });
     audit(req, 'auth.register.ok', { user, msg: invite ? invite.code : null });
     json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
   },
@@ -2339,6 +2704,10 @@ const routes = {
       audit(req, 'auth.login.fail', { ok: false, user, msg: 'account-disabled' });
       return json(res, 403, { error: 'this account has been disabled', code: 'disabled' });
     }
+    // A crash after db.json was made durable but before the authority transaction completed
+    // leaves no ambiguous credential repair path: the holder simply signs in and resumes the
+    // pending operational-role workflow for that same UID.
+    if (authorityService) authorityService.recoverEnrollmentIdentity(user.id);
     audit(req, 'auth.login.ok', { user });
     json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
   },
@@ -2385,6 +2754,7 @@ const routes = {
   'POST /api/account/delete': async (req, res) => {
     const s = sessionOf(req);
     if (!s) return json(res, 401, { error: 'not signed in' });
+    if (MANAGED_SUBSCRIPTIONS) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }, { 'Cache-Control': 'private, no-store' });
     const { user } = s;
     const body = await readBody(req);
     if (sessionOf(req)?.user !== user) return json(res, 401, { error: 'not signed in' });
@@ -2828,6 +3198,7 @@ const routes = {
   // before the confirm, so the training history can be kept if anyone wants it.
   'POST /api/admin/user/delete': async (req, res) => {
     const admin = requireAdmin(req, res); if (!admin) return;
+    if (MANAGED_SUBSCRIPTIONS) return json(res, 503, { error: 'authority unavailable', code: 'policy-not-configured' }, { 'Cache-Control': 'private, no-store' });
     const body = await readBody(req);
     const u = db.users.find(x => x.id === body.id);
     if (!u) return json(res, 404, { error: 'no such user' });
@@ -2976,7 +3347,7 @@ coachJobs.setProposalHook((uid, pending) => {
     tag: 'coach-proposal', url: '#/coach'
   });
 });
-startCadence({ users: () => db.users.filter(u => !u.disabled), userNow, skip: uid => !stateSummary(uid)?.consent });
+startCadence({ users: () => db.users.filter(u => !u.disabled && managedTrainingEntitled(u.id)), userNow, skip: uid => !stateSummary(uid)?.consent });
 startWarmup();
 
 // node's requestTimeout is one number for every route, and it is half an hour (below) for the
@@ -3002,7 +3373,40 @@ function bodyDeadline(req) {
 
 // The Capacitor WebView origins of the Android and iOS app.
 const APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost', 'http://localhost']);
-const managedPersonalTrainingRoute = key => key === 'GET /api/data' || key === 'PUT /api/data' || key === 'GET /api/data/rev' || key === 'GET /api/nudge-check' || key.startsWith('GET /api/media/') || key.startsWith('PUT /api/media/') || key.startsWith('DELETE /api/media/') || key.startsWith('POST /api/coach/') || key.startsWith('GET /api/coach/') || key.startsWith('POST /api/push/') || key.startsWith('GET /api/push/');
+// This is deliberately an exact inventory rather than a prefix guard: a new functional
+// personal endpoint must be classified below before the server can boot in managed mode.
+const MANAGED_PERSONAL_TRAINING = new Set([
+  'GET /api/data', 'PUT /api/data', 'GET /api/data/rev', 'GET /api/nudge-check',
+  'PUT /api/media/{hash}', 'GET /api/media/{hash}', 'POST /api/media/missing', 'POST /api/media/sweep',
+  'GET /api/coach/disclosure', 'GET /api/coach/status', 'POST /api/coach/plan', 'POST /api/coach/review',
+  'POST /api/coach/debrief', 'POST /api/coach/ask', 'GET /api/coach/cohort', 'POST /api/coach/cohort/share',
+  'POST /api/coach/pending/resolve', 'POST /api/coach/forget', 'GET /api/coach/account',
+  'POST /api/push/subscribe', 'GET /api/push/status', 'POST /api/push/unsubscribe', 'POST /api/push/test',
+  'POST /api/push/rest-timer', 'POST /api/push/rest-timer/cancel',
+  // New authoritative owner reads/writes which are personal-training actions.  The explicit
+  // close remains outside this set: it must release a stale OPEN session after expiry.
+  'GET /api/client/plan/current', 'GET /api/client/sessions/current', 'POST /api/client/sessions/start',
+  'POST /api/client/sessions/finish', 'GET /api/client/executions', 'GET /api/client/bodyweight', 'POST /api/client/bodyweight'
+]);
+const MANAGED_PUBLIC_COMPATIBILITY = new Set(['GET /api/push/public-key']);
+const MANAGED_NON_PERSONAL_CLIENT_AUTHORITY = new Set([
+  'GET /api/client/relations', 'POST /api/client/relations/grants/replace', 'POST /api/client/relations/grants/revoke',
+  'POST /api/client/relations/revoke', 'POST /api/client/relations/reactivate-accept', 'POST /api/client/sessions/abandon',
+  'POST /api/client/exports', 'GET /api/client/exports/{jobId}', 'POST /api/client/deletion-requests'
+]);
+const managedPersonalTrainingRoute = key => MANAGED_PERSONAL_TRAINING.has(key);
+function assertManagedRouteInventory(routeKeys) {
+  for (const key of routeKeys) {
+    const [, pathname = ''] = key.split(' ');
+    const candidate = pathname === '/api/data' || pathname === '/api/data/rev' || pathname === '/api/nudge-check'
+      || pathname.startsWith('/api/media/') || pathname.startsWith('/api/client/') || (pathname.startsWith('/api/coach/') && !pathname.startsWith('/api/admin/coach'))
+      || pathname.startsWith('/api/push/');
+    if (candidate && !MANAGED_PERSONAL_TRAINING.has(key) && !MANAGED_PUBLIC_COMPATIBILITY.has(key) && !MANAGED_NON_PERSONAL_CLIENT_AUTHORITY.has(key)) {
+      throw new Error(`managed route inventory is missing a decision for ${key}`);
+    }
+  }
+}
+assertManagedRouteInventory(Object.keys(routes));
 
 const server = http.createServer(async (req, res) => {
   bodyDeadline(req);
@@ -3023,7 +3427,7 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
       // The CF-Access-* pair: a phone's Cloudflare Access service token (frontend lib/cf-access.js),
       // for an Access application that passes OPTIONS through to the origin.
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, CF-Access-Client-Id, CF-Access-Client-Secret',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, CF-Access-Client-Id, CF-Access-Client-Secret, X-OpenGym-Contract-Version',
       'Access-Control-Max-Age': '86400',
       ...(pna ? { 'Access-Control-Allow-Private-Network': 'true' } : {})
     });
@@ -3045,6 +3449,8 @@ const server = http.createServer(async (req, res) => {
   // above stays a plain lookup, and so csrfOk and the catch-all see one name for every file.
   const mm = /^\/api\/media\/([0-9a-f]{64})$/.exec(url.pathname);
   if (mm) { key = req.method + ' /api/media/{hash}'; req.mediaHash = mm[1]; }
+  const exportMatch = /^\/api\/client\/exports\/([^/]+)$/.exec(url.pathname);
+  if (exportMatch) { key = req.method + ' /api/client/exports/{jobId}'; req.exportJobId = exportMatch[1]; }
   const handler = routes[key];
   if (!handler) return json(res, 404, { error: 'not found' });
   if (MANAGED_SUBSCRIPTIONS && managedPersonalTrainingRoute(key)) {
@@ -3054,6 +3460,9 @@ const server = http.createServer(async (req, res) => {
       const access = authorityService?.accessSnapshot(user.id, { managedSubscriptions: true, requestId: crypto.randomUUID() });
       if (!access?.capabilities.includes('ACCESS_PERSONAL_TRAINING')) return json(res, 403, { error: 'training access is not entitled', code: 'not-entitled' });
     } catch { return json(res, 403, { error: 'training access is not entitled', code: 'not-entitled' }); }
+    if (req.headers['x-opengym-contract-version'] !== MANAGED_CONTRACT_VERSION) {
+      return json(res, 426, { error: 'this client cannot use protected training', code: 'unsupported-client' });
+    }
   }
   if (!csrfOk(req, key)) {
     // A Bearer that does not verify and no cookie beside it: nothing ambient is in play, the caller

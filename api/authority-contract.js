@@ -6,7 +6,7 @@ export const CAPABILITIES = Object.freeze([
   'ACCESS_PERSONAL_TRAINING', 'MANAGE_OPERATIONAL_ROLES', 'MANAGE_COORDINATOR_SCOPE',
   'CREATE_INVITATION', 'PREVIEW_INVITATION', 'ACCEPT_INVITATION', 'CONFIRM_RELATION',
   'CHANGE_RELATION', 'CHANGE_GRANT', 'PUBLISH_PLAN', 'READ_CLIENT_PLAN', 'READ_OWN_EXECUTIONS',
-  'START_SESSION', 'FINISH_SESSION', 'READ_TRAINER_EXECUTIONS', 'CONFIRM_SUBSCRIPTION',
+  'START_SESSION', 'FINISH_SESSION', 'READ_TRAINER_EXECUTIONS', 'READ_TRAINER_HISTORY', 'READ_TRAINER_BODYWEIGHT', 'CONFIRM_SUBSCRIPTION',
   'READ_COMMERCIAL_CLIENTS', 'EXPORT_OWN_DATA', 'REQUEST_OWN_DELETION'
 ]);
 export const AGGREGATE_KINDS = Object.freeze(['ROLES', 'SCOPE', 'INVITE_SET', 'INVITATION', 'RELATION', 'SUBSCRIPTION', 'PLAN_SET', 'GOAL_SET', 'SESSION_SET', 'SESSION', 'BODYWEIGHT_SET', 'EXPORT_SET', 'DELETION_REQUEST_SET']);
@@ -138,7 +138,7 @@ const exerciseId = (value, options) => {
 };
 const grants = value => {
   if (!Array.isArray(value)) throw new TypeError('grants must be an array');
-  return value.map(grant => {
+  const parsed = value.map(grant => {
     if (!plain(grant)) throw new TypeError('grant must be an object');
     const history = grant.kind === 'HISTORY';
     requireKeys(grant, history ? ['kind', 'startUtc', 'endExclusiveUtc'] : ['kind'], history ? ['includeWeight'] : ['startUtc', 'endExclusiveUtc']);
@@ -155,6 +155,20 @@ const grants = value => {
     }
     return out;
   });
+  const identities = new Set();
+  for (const item of parsed) {
+    const identity = `${item.kind}\u0000${item.startUtc ?? ''}\u0000${item.endExclusiveUtc ?? ''}`;
+    if (identities.has(identity)) throw new TypeError('duplicate grant identity');
+    identities.add(identity);
+  }
+  const history = parsed.filter(item => item.kind === 'HISTORY').sort((a, b) => a.startUtc.localeCompare(b.startUtc));
+  for (let index = 1; index < history.length; index += 1) {
+    if (history[index - 1].endExclusiveUtc > history[index].startUtc) throw new TypeError('history grants must not overlap');
+  }
+  if (history.some(item => item.includeWeight === true) && !parsed.some(item => item.kind === 'WEIGHT')) {
+    throw new TypeError('includeWeight requires an explicit WEIGHT grant');
+  }
+  return parsed;
 };
 
 export function parseAuthorityPayload(kind, payload, options = {}) {
@@ -185,6 +199,33 @@ export function parseAuthorityPayload(kind, payload, options = {}) {
     requireKeys(payload, ['commercialName', 'grants'], ['knownClientId']);
     return { ...(payload.knownClientId === undefined ? {} : { knownClientId: existingAccountId(payload.knownClientId) }), commercialName: string(payload.commercialName, 'commercialName', 1, 120), grants: grants(payload.grants) };
   }
+  if (kind === 'invitationReplace') {
+    requireKeys(payload, ['invitationId', 'commercialName', 'grants'], ['knownClientId']);
+    return { invitationId: uuid(payload.invitationId, 'invitationId'), ...(payload.knownClientId === undefined ? {} : { knownClientId: existingAccountId(payload.knownClientId) }), commercialName: string(payload.commercialName, 'commercialName', 1, 120), grants: grants(payload.grants) };
+  }
+  if (kind === 'invitationToken') {
+    requireKeys(payload, ['token']);
+    if (typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(payload.token)) throw new TypeError('invalid invitation token');
+    return { token: payload.token };
+  }
+  if (kind === 'acceptInvitation') {
+    requireKeys(payload, ['token', 'grants']);
+    if (typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(payload.token)) throw new TypeError('invalid invitation token');
+    return { token: payload.token, grants: grants(payload.grants) };
+  }
+  if (kind === 'invitationRevoke') {
+    requireKeys(payload, ['invitationId', 'reason']);
+    return { invitationId: uuid(payload.invitationId, 'invitationId'), reason: reason(payload.reason) };
+  }
+  if (kind === 'relationConfirm') {
+    requireKeys(payload, ['relationId']);
+    return { relationId: uuid(payload.relationId, 'relationId') };
+  }
+  if (kind === 'grantRevoke') {
+    requireKeys(payload, ['relationId', 'kind', 'reason']);
+    if (!['PLAN', 'EXECUTION', 'HISTORY', 'WEIGHT'].includes(payload.kind)) throw new TypeError('invalid grant kind');
+    return { relationId: uuid(payload.relationId, 'relationId'), kind: payload.kind, reason: reason(payload.reason) };
+  }
   if (kind === 'relation') { requireKeys(payload, ['relationId', 'reason']); return { relationId: uuid(payload.relationId, 'relationId'), reason: reason(payload.reason) }; }
   if (kind === 'bodyweight') {
     requireKeys(payload, ['weight', 'unit', 'reportedDatePanama']);
@@ -192,12 +233,18 @@ export function parseAuthorityPayload(kind, payload, options = {}) {
     return { weight: finite(payload.weight, 'weight', 1, 500), unit: payload.unit, reportedDatePanama: validPanamaDate(payload.reportedDatePanama, 'reportedDatePanama', { notFuture: true, clock: options.clock }) };
   }
   if (kind === 'goal') return goal(payload, options);
+  if (kind === 'goalsPublish') {
+    requireKeys(payload, ['relationId', 'goals']);
+    if (!Array.isArray(payload.goals) || payload.goals.length > 40) throw new TypeError('invalid goals');
+    return { relationId: uuid(payload.relationId, 'relationId'), goals: payload.goals.map(value => goal(value, options)) };
+  }
   if (kind === 'plan') {
     requireKeys(payload, ['relationId', 'exercises'], ['goalVersionId']);
     if (!Array.isArray(payload.exercises) || payload.exercises.length > 40) throw new TypeError('invalid plan exercises');
     return { relationId: uuid(payload.relationId, 'relationId'), ...(payload.goalVersionId === undefined ? {} : { goalVersionId: uuid(payload.goalVersionId, 'goalVersionId') }), exercises: payload.exercises.map(value => planExercise(value, options)) };
   }
   if (kind === 'sessionStart') { requireKeys(payload, ['planVersionId']); return { planVersionId: uuid(payload.planVersionId, 'planVersionId') }; }
+  if (kind === 'sessionClose') { requireKeys(payload, ['sessionId']); return { sessionId: uuid(payload.sessionId, 'sessionId') }; }
   if (kind === 'execution') {
     requireKeys(payload, ['sessionId', 'entries']);
     if (!Array.isArray(payload.entries) || payload.entries.length > 40) throw new TypeError('invalid execution entries');

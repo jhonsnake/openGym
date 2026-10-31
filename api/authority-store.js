@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DatabaseSync, backup } from 'node:sqlite';
 import { canonicalAggregateKey } from './authority-contract.js';
 
-export const AUTHORITY_SCHEMA_VERSION = 1;
+export const AUTHORITY_SCHEMA_VERSION = 5;
 const SCHEMA_VERSION = AUTHORITY_SCHEMA_VERSION;
 const sql = String.raw`
 CREATE TABLE schema_meta (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version>=0));
@@ -15,19 +15,20 @@ CREATE UNIQUE INDEX coordinator_scopes_active_unique ON coordinator_scopes(coord
 CREATE TABLE invitations (id TEXT PRIMARY KEY, trainer_id TEXT NOT NULL, known_client_id TEXT, commercial_name TEXT NOT NULL CHECK(length(commercial_name) BETWEEN 1 AND 120), token_sha256 TEXT NOT NULL UNIQUE, state TEXT NOT NULL CHECK(state IN ('PENDING','ACCEPTED','REJECTED','REVOKED','EXPIRED')), expires_at_utc TEXT NOT NULL, created_at_utc TEXT NOT NULL, consumed_at_utc TEXT, revoked_at_utc TEXT, version INTEGER NOT NULL CHECK(version>=1));
 CREATE UNIQUE INDEX invitations_pending_token ON invitations(token_sha256) WHERE state='PENDING';
 CREATE TABLE invitation_grants (id TEXT PRIMARY KEY, invitation_id TEXT NOT NULL REFERENCES invitations(id), kind TEXT NOT NULL CHECK(kind IN ('PLAN','EXECUTION','HISTORY','WEIGHT')), start_utc TEXT, end_exclusive_utc TEXT, include_weight INTEGER NOT NULL DEFAULT 0 CHECK(include_weight IN (0,1)), CHECK((kind='HISTORY' AND start_utc IS NOT NULL AND end_exclusive_utc IS NOT NULL AND start_utc < end_exclusive_utc) OR kind!='HISTORY'));
-CREATE TABLE enrollment_sessions (id TEXT PRIMARY KEY, invitation_id TEXT NOT NULL REFERENCES invitations(id), uid TEXT NOT NULL CHECK(length(uid) BETWEEN 1 AND 128), challenge_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('CHALLENGE_ISSUED','IDENTITY_CREATED','PENDING_OPERATIONAL_ROLE','ABORTED','COMPLETED')), created_at_utc TEXT NOT NULL, updated_at_utc TEXT NOT NULL, expires_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), UNIQUE(invitation_id,uid));
+  CREATE TABLE enrollment_sessions (id TEXT PRIMARY KEY, invitation_id TEXT NOT NULL REFERENCES invitations(id), uid TEXT NOT NULL CHECK(length(uid) BETWEEN 1 AND 128), challenge_hash TEXT NOT NULL, initiator_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('CHALLENGE_ISSUED','IDENTITY_CREATED','PENDING_OPERATIONAL_ROLE','ABORTED','COMPLETED')), created_at_utc TEXT NOT NULL, updated_at_utc TEXT NOT NULL, expires_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), UNIQUE(invitation_id,uid));
 CREATE UNIQUE INDEX enrollment_sessions_active_challenge_unique ON enrollment_sessions(challenge_hash) WHERE state='CHALLENGE_ISSUED';
 CREATE TABLE relations (id TEXT PRIMARY KEY, trainer_id TEXT NOT NULL, client_id TEXT NOT NULL, invitation_id TEXT NOT NULL UNIQUE REFERENCES invitations(id), state TEXT NOT NULL CHECK(state IN ('PENDING_CONFIRMATION','ACTIVE','SUSPENDED','REACTIVATION_PENDING','ENDED')), accepted_at_utc TEXT NOT NULL, confirmed_at_utc TEXT, ended_at_utc TEXT, reason TEXT, version INTEGER NOT NULL CHECK(version>=1));
 CREATE UNIQUE INDEX relations_one_active_client ON relations(client_id) WHERE state='ACTIVE';
 CREATE TABLE relation_access_windows (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), eligible_from_utc TEXT NOT NULL, enabled_from_utc TEXT NOT NULL, ended_at_utc TEXT, reason TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(eligible_from_utc<=enabled_from_utc));
 CREATE UNIQUE INDEX relation_windows_one_active ON relation_access_windows(relation_id) WHERE ended_at_utc IS NULL;
-CREATE TABLE relation_grants (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), kind TEXT NOT NULL CHECK(kind IN ('PLAN','EXECUTION','HISTORY','WEIGHT')), state TEXT NOT NULL CHECK(state IN ('ACTIVE','REVOKED','EXPIRED')), window_start_utc TEXT, window_end_exclusive_utc TEXT, granted_by TEXT NOT NULL, revoked_at_utc TEXT, version INTEGER NOT NULL CHECK(version>=1), CHECK(window_start_utc IS NULL OR window_end_exclusive_utc IS NULL OR window_start_utc<window_end_exclusive_utc));
+CREATE TABLE relation_grants (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), kind TEXT NOT NULL CHECK(kind IN ('PLAN','EXECUTION','HISTORY','WEIGHT')), state TEXT NOT NULL CHECK(state IN ('ACTIVE','REVOKED','EXPIRED')), window_start_utc TEXT, window_end_exclusive_utc TEXT, include_weight INTEGER NOT NULL DEFAULT 0 CHECK(include_weight IN (0,1)), granted_by TEXT NOT NULL, revoked_at_utc TEXT, eligible_from_utc TEXT, version INTEGER NOT NULL CHECK(version>=1), CHECK(window_start_utc IS NULL OR window_end_exclusive_utc IS NULL OR window_start_utc<window_end_exclusive_utc));
 CREATE UNIQUE INDEX relation_grants_active_unique ON relation_grants(relation_id,kind,coalesce(window_start_utc,''),coalesce(window_end_exclusive_utc,'')) WHERE state='ACTIVE';
+  CREATE TABLE relation_pending_grants (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), kind TEXT NOT NULL CHECK(kind IN ('PLAN','EXECUTION','HISTORY','WEIGHT')), window_start_utc TEXT, window_end_exclusive_utc TEXT, include_weight INTEGER NOT NULL DEFAULT 0 CHECK(include_weight IN (0,1)), consented_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(window_start_utc IS NULL OR window_end_exclusive_utc IS NULL OR window_start_utc<window_end_exclusive_utc));
 CREATE TABLE subscription_intervals (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, start_utc TEXT NOT NULL, end_exclusive_utc TEXT NOT NULL, anchor_day INTEGER NOT NULL CHECK(anchor_day BETWEEN 1 AND 31), kind TEXT NOT NULL CHECK(kind IN ('MONTHLY','QUARTERLY','SEMIANNUAL','ANNUAL','CUSTOM')), reference TEXT NOT NULL CHECK(length(reference) BETWEEN 1 AND 160), reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 280), created_by TEXT NOT NULL, created_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(start_utc<end_exclusive_utc));
 CREATE TABLE commercial_operations (operation_id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, client_id TEXT NOT NULL, payload_hash TEXT NOT NULL, expected_subscription_version INTEGER NOT NULL CHECK(expected_subscription_version>=0), result_interval_id TEXT NOT NULL REFERENCES subscription_intervals(id), created_at_utc TEXT NOT NULL);
 CREATE TABLE goal_versions (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), version_number INTEGER NOT NULL CHECK(version_number>=1), payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, created_by TEXT NOT NULL, created_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), UNIQUE(relation_id,version_number));
 CREATE TABLE plan_versions (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), version_number INTEGER NOT NULL CHECK(version_number>=1), goal_version_id TEXT REFERENCES goal_versions(id), payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, created_by TEXT NOT NULL, published_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), UNIQUE(relation_id,version_number));
-CREATE TABLE client_sessions (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, relation_id TEXT NOT NULL REFERENCES relations(id), plan_version_id TEXT NOT NULL REFERENCES plan_versions(id), goal_version_id TEXT REFERENCES goal_versions(id), access_window_id TEXT NOT NULL REFERENCES relation_access_windows(id), server_started_at_utc TEXT NOT NULL, snapshot_json TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('OPEN','FINISHED')), finished_at_utc TEXT, version INTEGER NOT NULL CHECK(version>=1));
+CREATE TABLE client_sessions (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, relation_id TEXT NOT NULL REFERENCES relations(id), plan_version_id TEXT NOT NULL REFERENCES plan_versions(id), goal_version_id TEXT REFERENCES goal_versions(id), access_window_id TEXT NOT NULL REFERENCES relation_access_windows(id), server_started_at_utc TEXT NOT NULL, snapshot_json TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('OPEN','FINISHED','CLOSED')), finished_at_utc TEXT, version INTEGER NOT NULL CHECK(version>=1));
 CREATE UNIQUE INDEX client_sessions_one_open ON client_sessions(client_id) WHERE state='OPEN';
 CREATE TABLE session_executions (id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE REFERENCES client_sessions(id), client_id TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, operation_id TEXT NOT NULL UNIQUE, submitted_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1));
 CREATE TABLE export_jobs (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('REQUESTED','READY','EXPIRED','FAILED')), path TEXT, created_at_utc TEXT NOT NULL, expires_at_utc TEXT, version INTEGER NOT NULL CHECK(version>=1));
@@ -37,7 +38,7 @@ CREATE TABLE authority_audit (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, subje
 CREATE TABLE aggregate_versions (kind TEXT NOT NULL, aggregate_key TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=0), PRIMARY KEY(kind,aggregate_key));
 CREATE TABLE mutation_results (operation_id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, capability TEXT NOT NULL, subject_id TEXT, aggregate_kind TEXT NOT NULL, aggregate_key TEXT NOT NULL, payload_sha256 TEXT NOT NULL, result_entity_type TEXT NOT NULL, result_entity_id TEXT NOT NULL, result_version INTEGER NOT NULL CHECK(result_version>=1), result_metadata_json TEXT NOT NULL, committed_at_utc TEXT NOT NULL);
 CREATE TABLE bodyweight_entries (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, weight REAL NOT NULL CHECK(weight>0 AND weight<=500), unit TEXT NOT NULL CHECK(unit IN ('KG','LB')), reported_date_panama TEXT NOT NULL, received_at_utc TEXT NOT NULL, operation_id TEXT NOT NULL UNIQUE, version INTEGER NOT NULL CHECK(version>=1));
-CREATE TABLE history_shares (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, relation_id TEXT NOT NULL REFERENCES relations(id), grant_id TEXT NOT NULL REFERENCES relation_grants(id), from_utc TEXT NOT NULL, to_exclusive_utc TEXT NOT NULL, source_personal_rev TEXT, source_personal_wid TEXT, source_sqlite_version INTEGER, projection_json TEXT NOT NULL, projection_sha256 TEXT NOT NULL, published_at_utc TEXT NOT NULL, operation_id TEXT NOT NULL UNIQUE, version INTEGER NOT NULL CHECK(version>=1), CHECK(from_utc<to_exclusive_utc));
+CREATE TABLE history_shares (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, relation_id TEXT NOT NULL REFERENCES relations(id), grant_id TEXT NOT NULL REFERENCES relation_grants(id), from_utc TEXT NOT NULL, to_exclusive_utc TEXT NOT NULL, source_personal_rev TEXT, source_personal_wid TEXT, source_sqlite_version INTEGER, projection_json TEXT NOT NULL, projection_sha256 TEXT NOT NULL, published_at_utc TEXT NOT NULL, operation_id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(from_utc<to_exclusive_utc), UNIQUE(operation_id,grant_id));
 `;
 const now = () => new Date().toISOString();
 export function createAuthorityStore({ dataDir, filename = 'authority.sqlite' } = {}) {
@@ -46,6 +47,11 @@ export function createAuthorityStore({ dataDir, filename = 'authority.sqlite' } 
   const file = path.join(dataDir, filename);
   const db = new DatabaseSync(file);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
+  const preexisting = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_meta'").get();
+  const previousVersion = preexisting ? db.prepare('SELECT version FROM schema_meta WHERE id=1').get()?.version : null;
+  // SQLite cannot alter these constraints. FKs are disabled only for the table rebuilds;
+  // every prior row is copied unchanged before commit.
+  if (previousVersion === 1 || previousVersion === 2 || previousVersion === 3) db.exec('PRAGMA foreign_keys=OFF;');
   db.exec('BEGIN IMMEDIATE');
   try {
     const exists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_meta'").get();
@@ -56,12 +62,48 @@ export function createAuthorityStore({ dataDir, filename = 'authority.sqlite' } 
     } else {
       const row = db.prepare('SELECT version FROM schema_meta WHERE id=1').get();
       if (!row || row.version > SCHEMA_VERSION) throw new Error('authority schema is newer than this server');
-      if (row.version !== SCHEMA_VERSION) throw new Error('unsupported authority schema migration');
+      if (row.version === 1) {
+        db.exec("ALTER TABLE enrollment_sessions ADD COLUMN initiator_hash TEXT NOT NULL DEFAULT '';\nCREATE TABLE relation_pending_grants (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), kind TEXT NOT NULL CHECK(kind IN ('PLAN','EXECUTION','HISTORY','WEIGHT')), window_start_utc TEXT, window_end_exclusive_utc TEXT, include_weight INTEGER NOT NULL DEFAULT 0 CHECK(include_weight IN (0,1)), consented_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(window_start_utc IS NULL OR window_end_exclusive_utc IS NULL OR window_start_utc<window_end_exclusive_utc));\nUPDATE enrollment_sessions SET initiator_hash='migrated-unusable:' || id;\nUPDATE schema_meta SET version=2 WHERE id=1;\nUPDATE authority_meta SET schema_version=2 WHERE id=1;");
+      }
+      if (row.version === 1 || row.version === 2) {
+        db.exec(`ALTER TABLE session_executions RENAME TO session_executions_v2;
+ALTER TABLE client_sessions RENAME TO client_sessions_v2;
+CREATE TABLE client_sessions (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, relation_id TEXT NOT NULL REFERENCES relations(id), plan_version_id TEXT NOT NULL REFERENCES plan_versions(id), goal_version_id TEXT REFERENCES goal_versions(id), access_window_id TEXT NOT NULL REFERENCES relation_access_windows(id), server_started_at_utc TEXT NOT NULL, snapshot_json TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('OPEN','FINISHED','CLOSED')), finished_at_utc TEXT, version INTEGER NOT NULL CHECK(version>=1));
+INSERT INTO client_sessions SELECT id,client_id,relation_id,plan_version_id,goal_version_id,access_window_id,server_started_at_utc,snapshot_json,state,finished_at_utc,version FROM client_sessions_v2;
+CREATE TABLE session_executions (id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE REFERENCES client_sessions(id), client_id TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, operation_id TEXT NOT NULL UNIQUE, submitted_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1));
+INSERT INTO session_executions SELECT id,session_id,client_id,payload_json,payload_sha256,operation_id,submitted_at_utc,version FROM session_executions_v2;
+DROP TABLE client_sessions_v2;
+DROP TABLE session_executions_v2;
+CREATE UNIQUE INDEX client_sessions_one_open ON client_sessions(client_id) WHERE state='OPEN';
+UPDATE schema_meta SET version=3 WHERE id=1;
+UPDATE authority_meta SET schema_version=3 WHERE id=1;`);
+      }
+      if (row.version === 1 || row.version === 2 || row.version === 3) {
+        db.exec(`ALTER TABLE history_shares RENAME TO history_shares_v3;
+CREATE TABLE history_shares (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, relation_id TEXT NOT NULL REFERENCES relations(id), grant_id TEXT NOT NULL REFERENCES relation_grants(id), from_utc TEXT NOT NULL, to_exclusive_utc TEXT NOT NULL, source_personal_rev TEXT, source_personal_wid TEXT, source_sqlite_version INTEGER, projection_json TEXT NOT NULL, projection_sha256 TEXT NOT NULL, published_at_utc TEXT NOT NULL, operation_id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(from_utc<to_exclusive_utc), UNIQUE(operation_id,grant_id));
+INSERT INTO history_shares SELECT id,client_id,relation_id,grant_id,from_utc,to_exclusive_utc,source_personal_rev,source_personal_wid,source_sqlite_version,projection_json,projection_sha256,published_at_utc,operation_id,version FROM history_shares_v3;
+DROP TABLE history_shares_v3;
+UPDATE schema_meta SET version=4 WHERE id=1;
+UPDATE authority_meta SET schema_version=4 WHERE id=1;`);
+      }
+      if (row.version >= 1 && row.version <= 4) {
+        const migrationStamp = now();
+        const grantColumns = new Set(db.prepare('PRAGMA table_info(relation_grants)').all().map(column => column.name));
+        if (!grantColumns.has('include_weight')) db.exec('ALTER TABLE relation_grants ADD COLUMN include_weight INTEGER NOT NULL DEFAULT 0 CHECK(include_weight IN (0,1));');
+        if (!grantColumns.has('eligible_from_utc')) db.exec('ALTER TABLE relation_grants ADD COLUMN eligible_from_utc TEXT;');
+        db.exec('UPDATE schema_meta SET version=5 WHERE id=1; UPDATE authority_meta SET schema_version=5 WHERE id=1;');
+        db.prepare('UPDATE relation_grants SET eligible_from_utc=? WHERE eligible_from_utc IS NULL').run(migrationStamp);
+      } else if (row.version !== SCHEMA_VERSION) throw new Error('unsupported authority schema migration');
       const meta = db.prepare('SELECT schema_version FROM authority_meta WHERE id=1').get();
       if (!meta || meta.schema_version > SCHEMA_VERSION) throw new Error('authority schema is newer than this server');
       if (meta.schema_version !== SCHEMA_VERSION) throw new Error('unsupported authority schema migration');
     }
+    if (previousVersion === 1 || previousVersion === 2 || previousVersion === 3 || previousVersion === 4) {
+      const foreignKeyErrors = db.prepare('PRAGMA foreign_key_check').all();
+      if (foreignKeyErrors.length) throw new Error('authority migration foreign-key check failed');
+    }
     db.exec('COMMIT');
+    if (previousVersion === 1 || previousVersion === 2 || previousVersion === 3) db.exec('PRAGMA foreign_keys=ON;');
   } catch (error) { try { db.exec('ROLLBACK'); } catch {} db.close(); throw error; }
   const getAggregateVersion = (kind, key) => db.prepare('SELECT version FROM aggregate_versions WHERE kind=? AND aggregate_key=?').get(kind, key)?.version ?? 0;
   const transaction = (context, work) => {
