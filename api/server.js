@@ -3377,6 +3377,7 @@ const APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost', 'http
 // personal endpoint must be classified below before the server can boot in managed mode.
 const MANAGED_PERSONAL_TRAINING = new Set([
   'GET /api/data', 'PUT /api/data', 'GET /api/data/rev', 'GET /api/nudge-check',
+  'POST /api/activity',
   'PUT /api/media/{hash}', 'GET /api/media/{hash}', 'POST /api/media/missing', 'POST /api/media/sweep',
   'GET /api/coach/disclosure', 'GET /api/coach/status', 'POST /api/coach/plan', 'POST /api/coach/review',
   'POST /api/coach/debrief', 'POST /api/coach/ask', 'GET /api/coach/cohort', 'POST /api/coach/cohort/share',
@@ -3398,7 +3399,7 @@ const managedPersonalTrainingRoute = key => MANAGED_PERSONAL_TRAINING.has(key);
 function assertManagedRouteInventory(routeKeys) {
   for (const key of routeKeys) {
     const [, pathname = ''] = key.split(' ');
-    const candidate = pathname === '/api/data' || pathname === '/api/data/rev' || pathname === '/api/nudge-check'
+    const candidate = pathname === '/api/data' || pathname === '/api/data/rev' || pathname === '/api/nudge-check' || pathname === '/api/activity'
       || pathname.startsWith('/api/media/') || pathname.startsWith('/api/client/') || (pathname.startsWith('/api/coach/') && !pathname.startsWith('/api/admin/coach'))
       || pathname.startsWith('/api/push/');
     if (candidate && !MANAGED_PERSONAL_TRAINING.has(key) && !MANAGED_PUBLIC_COMPATIBILITY.has(key) && !MANAGED_NON_PERSONAL_CLIENT_AUTHORITY.has(key)) {

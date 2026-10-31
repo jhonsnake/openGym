@@ -1,5 +1,14 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## API actual:807/807 PASS y revisión acotada aprobada; frontend aún bajo gates
+
+La fullAPI en api-acceptance-v4 terminóEXIT0:807tests/807PASS/0FAIL/0SKIP/0cancelled. Se parseó TAP real y se verificaron190hashes sin cambios y Root coincidente. Incluye guard autoritativo /api/activity y proyección propia pendingProposals; review acotada api-security-fix-review-v3.json TRUE sin concerns/errores, manifiestos verificados. El v3 reducido/COACH_DISABLED equivocado se conserva rojo como evidencia; no se relajó producto ni se eliminaron tests. Root y snapshot actual sí son807, no la imagen5c que aún es anterior. Scan previo API añadido sin candidatos de credenciales/ejecución insegura/atribución; tests nuevos revisados y fuera del COPY runtime.
+
+Clínica fue implementada en segundo intento0d79,15tests+build reportados (no aceptados por exit0): cargas fraccionales, rangos, RPE/RIR, overrides, detalles publicados/reales/históricos/peso. Harness6c9 terminó con7contratos puros reportados, pin explícito OPENGYM_E2E_API_IMAGE_TAG/ID y sincronización/cookie real. No realizó T9. Todos los escritores finalizaron; crear snapshot frontend COMPLETO actual con estos archivos, pruebas y auxiliares; correr full/review final, no usar snapshots anteriores para acreditar interfaz nueva. App fixture26reportados; parentCommercial11 ypending22 PASS.
+
+Se publica ahora sólo el hito API807+ledger con remoto comprobado, después imagen API candidata nueva y verificación empaquetada. No despliegue MVP, no roles reales. Restore privilegiado sigue sin reintento ni autorización específica; no se sustituye por otra vía. Frontend full/review y browser clínico/restore final/imagen personal completa/activación nominal siguen pendientes.
+
+
 ## Corte vigente: review API acotada aprobada; full corregida, UI clínica y harness activos
 
 Commercial LOG06 terminó y el padre ejecutó11/11tests PASS. Productor pendingProposals propio completado,7API/22frontend reportados; padre ejecutó22/22frontend PASS. Fixture App comercial arreglada sin tocar producción,26/26en3archivos reportados; padre antes reprodujo25PASS/1FAIL, falta reejecución amplia tras liberar UI. API source190 fue revisado independientemente: api-security-fix-review-v3.json TRUE sin concerns/errores; hashes API y guardas frontend verificados por padre. Primer intento de review sólo falló por cwd sin Git; retry en worktree real sí revisó, no se contó rechazo como review.

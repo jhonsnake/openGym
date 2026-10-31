@@ -4561,7 +4561,7 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [relationId, trainer, state, acceptedAt, confirmedAt, endedAt, grants, version]
+            required: [relationId, trainer, state, acceptedAt, confirmedAt, endedAt, grants, pendingProposals, version]
             properties:
               relationId: { $ref: '#/components/schemas/UUIDv4' }
               trainer: { type: object, additionalProperties: false, required: [id], properties: { id: { $ref: '#/components/schemas/ExistingAccountId' } } }
@@ -4570,6 +4570,7 @@ components:
               confirmedAt: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }
               endedAt: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }
               grants: { type: array, items: { $ref: '#/components/schemas/GrantedConsent' } }
+              pendingProposals: { type: array, items: { $ref: '#/components/schemas/GrantedConsent' } }
               version: { $ref: '#/components/schemas/SafeVersion' }
         nextCursor: { oneOf: [{ type: string, minLength: 1 }, { type: 'null' }] }
         versionTokens: { type: array, items: { $ref: '#/components/schemas/VersionToken' } }

@@ -465,6 +465,9 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
         confirmedAt: row.confirmed_at_utc,
         endedAt: row.ended_at_utc,
         grants: consentShape(tx.db.prepare("SELECT * FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind").all(row.id)),
+        pendingProposals: row.state === 'PENDING_CONFIRMATION'
+          ? consentShape(tx.db.prepare('SELECT kind,window_start_utc,window_end_exclusive_utc,include_weight FROM relation_pending_grants WHERE relation_id=? ORDER BY kind,window_start_utc,id').all(row.id))
+          : [],
         version: tx.getAggregateVersion('RELATION', [row.id])
       }));
       return requested ? { relations, hasMore: result.hasMore } : relations;
