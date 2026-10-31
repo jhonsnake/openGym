@@ -85,6 +85,11 @@ describe('tn() — plural forms from the pack', () => {
     expect(t('{0} exercises', 2)).toBe('2 упражнения')
   })
 
+  it('brands an allowed resolved form in tn() after plural selection', () => {
+    _setLangState('es', { 'Support openGym': { one: 'openGym notice', other: 'openGym notices' } }, null, null)
+    expect(tn('Support openGym', 'Support openGym', 2)).toBe('JohnGym notices')
+  })
+
   it('gives every tn() key real one / few / many forms in ru, uk and pl (#365)', () => {
     const keys = tnKeys()
     expect(keys.length).toBeGreaterThan(20)

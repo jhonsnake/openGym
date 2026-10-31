@@ -1,10 +1,67 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   LANGS, INSTR_LANGS, EXERCISE_NAME_LANGS, DATE_LOCALES, DERIVED_LOCALES,
   baseLang, derivePack, dateLocale, getLang, t, _setLangState, exerciseNameClass, exerciseNameFor, CASED_NAME_LANGS, RTL_LANGS
 } from './i18n-core.js'
 import { EXDB } from './exercises-data.js'
 import de from '../locales/de.js'
+import { VISIBLE_BRAND_SOURCE_KEYS } from './visible-brand-source-keys.js'
+
+const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+const sourceFiles = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
+  entry.isDirectory() ? sourceFiles(join(dir, entry.name)) : [join(dir, entry.name)])
+const brandedSourceCalls = () => {
+  const keys = new Set()
+  for (const file of sourceFiles(srcRoot)) {
+    if (!/\.(js|jsx|mjs)$/.test(file) || /\.test\.|[\\/]locales[\\/]/.test(file)) continue
+    const source = readFileSync(file, 'utf8')
+    const calls = /\bt\(\s*(['"])((?:\\.|(?!\1)[\s\S])*)\1/g
+    let match
+    while ((match = calls.exec(source))) if (match[2].includes('openGym')) keys.add(match[2].replace(/\\(['"])/g, '$1'))
+  }
+  return [...keys].sort()
+}
+
+describe('visible product branding', () => {
+  it('keeps the reviewed allowlist equal to literal branded UI source calls', () => {
+    expect([...VISIBLE_BRAND_SOURCE_KEYS].sort()).toEqual(brandedSourceCalls())
+  })
+
+  it('rebrands resolved English and Spanish UI text without changing locale keys or user data', async () => {
+    const source = 'This server only takes changes made at {0}. If you opened openGym at another address, whoever runs the server can set ORIGIN and RP_ID to match it (the self-hosting guide shows how).'
+    _setLangState('en', {}, null, null)
+    expect(t(source, 'https://openGym.example')).toBe('This server only takes changes made at https://openGym.example. If you opened JohnGym at another address, whoever runs the server can set ORIGIN and RP_ID to match it (the self-hosting guide shows how).')
+
+    const es = (await import('../locales/es.js')).default
+    _setLangState('es', es, null, null)
+    expect(t('Reload openGym')).toBe('Recargar JohnGym')
+    // The pack must keep the old source key so existing lookup calls still resolve.
+    expect(es['Reload openGym']).toBeTruthy()
+    _setLangState('en', {}, null, null)
+  })
+
+  it('only brands reviewed UI source keys, before interpolation, without changing technical literals', () => {
+    _setLangState('en', {}, null, null)
+    const backup = 'Saves a dated copy to Documents/openGym after finishing a workout or editing a routine, and keeps the newest {0}. Point a sync app at that folder, or copy it out by hand.'
+    expect(t(backup, 14)).toBe('Saves a dated copy to Documents/openGym after finishing a workout or editing a routine, and keeps the newest 14. Point a sync app at that folder, or copy it out by hand.')
+    expect(t('openGym can no longer write to “{0}”, so copies go to Documents/openGym again. Choose the folder again to switch back.', 'openGym/backup'))
+      .toBe('JohnGym can no longer write to “openGym/backup”, so copies go to Documents/openGym again. Choose the folder again to switch back.')
+    expect(t('my openGym routine')).toBe('my openGym routine')
+    expect(t('https://openGym.example/Documents/openGym')).toBe('https://openGym.example/Documents/openGym')
+    _setLangState('es', { 'Support openGym': 'Read https://openGym.example/docs, then openGym.' }, null, null)
+    expect(t('Support openGym')).toBe('Read https://openGym.example/docs, then JohnGym.')
+    _setLangState('en', {}, null, null)
+  })
+
+  it('brands a reviewed source key after plain t resolves a plural object', () => {
+    _setLangState('es', { 'Support openGym': { one: 'openGym notice', other: 'openGym notices' } }, null, null)
+    expect(t('Support openGym', 2)).toBe('JohnGym notices')
+    _setLangState('en', {}, null, null)
+  })
+})
 
 describe('baseLang', () => {
   it('maps a derived locale to the language whose packs it loads', () => {

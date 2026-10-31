@@ -60,7 +60,7 @@ describe('BackupFolderRow', () => {
     await mount()
     expect(host.querySelector('.backup-lost')).toBeNull()
     await act(async () => { m.listeners.forEach(fn => fn({ lost: true, lostLabel: 'Sync' })) })
-    expect(host.querySelector('.backup-lost').textContent).toContain('openGym can no longer write to “Sync”')
+    expect(host.querySelector('.backup-lost').textContent).toContain('JohnGym can no longer write to “Sync”')
     expect(rowWith('Backup folder').textContent).toContain('Documents/openGym')
     await tap(rowWith('Use default folder'))
     expect(host.querySelector('.backup-lost')).toBeNull()
@@ -75,7 +75,8 @@ describe('the Auto-backup subtitle', () => {
       .toBe('Saves a dated copy to “SyncFolder” after finishing a workout or editing a routine, and keeps the newest 14.')
     expect(autoBackupSubtitle({ uri: 'content://tree/x' }, 14))
       .toBe('Saves a dated copy to the folder you chose after finishing a workout or editing a routine, and keeps the newest 14.')
-    for (const f of [{}, null, { lost: true, lostLabel: 'SyncFolder' }]) expect(autoBackupSubtitle(f, 14)).toContain('Documents/openGym')
+    const native = 'Saves a dated copy to Documents/openGym after finishing a workout or editing a routine, and keeps the newest 14. Point a sync app at that folder, or copy it out by hand.'
+    for (const f of [{}, null, { lost: true, lostLabel: 'SyncFolder' }]) expect(autoBackupSubtitle(f, 14)).toBe(native)
   })
 
   it('the lost-folder warning is a warning row, not a big title', async () => {

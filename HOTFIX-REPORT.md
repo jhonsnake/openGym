@@ -135,6 +135,59 @@ The full inherited suite is not a green acceptance claim: it was launched before
 review fixes and overlaps their file changes. Its source-link assertion was subsequently
 rerun successfully in the final focused suite. No API/backend sources changed.
 
+## UI text cleanup (2026-10-31)
+
+This bounded follow-up replaces resolved visible `openGym` product text with `JohnGym` in the
+i18n reader, before interpolation. Locale dictionaries deliberately retain their historical
+English source keys, so existing lookups continue to work; user values passed through `{0}` and
+other placeholders are not changed. This covers English, Spanish, and every shipped locale pack
+without a fragile bulk rewrite. The remaining nontranslated user-facing surfaces were changed:
+mobile onboarding, printable document masthead, and workout-card footer.
+
+### i18n correction (2026-10-31)
+
+The reader now brands only a reviewed, static allowlist of 64 literal UI source keys, generated
+from the existing `t()` calls and kept under test. It does not load locale dictionaries to decide
+what to brand. Branding happens after either `t()` or `tn()` resolves a plural form and before
+placeholder interpolation. Unknown or user-derived source strings remain unchanged; interpolated
+values remain untouched; and literal URLs and slash-delimited filesystem paths such as
+`Documents/openGym` stay exact even inside an allowed UI sentence. Legal notices and source URLs
+were not edited.
+
+The boot watchdog's visible errors now say `JohnGym`. Its modified inline script has SHA-256
+`QOiIMyX3uUAAL4LoLjmHwCvDloAJOtGnR1EPIYBliVs=`; `branding-web.Dockerfile` overrides
+`CONTENT_SECURITY_POLICY` with that hash while retaining the inherited restrictive directives
+and without adding `unsafe-inline` to `script-src`.
+
+Validation performed in this worktree only:
+
+- Red regressions first: i18n display brand/user-placeholder preservation, watchdog wording,
+  CSP hash override, and the workout-card footer failed before implementation.
+- Focused Vitest, one worker: 121 tests across i18n, plural, boot watchdog, CSP, print, and
+  workout-card suites passed.
+- `npm run build` passed (existing Vite chunk-size and ineffective-dynamic-import warnings only).
+- Playwright, one worker: 4/4 Chromium desktop/mobile journeys passed, including English
+  authentication/settings/help text and Spanish `Continuar sin cuenta` / `Apoya JohnGym`.
+  The intentionally absent local API produced expected `/api/config` and `/api/me` connection
+  refusals; guest journeys completed.
+
+Intentional visible exceptions: legally/technically accurate upstream attribution and source
+offer details remain in About; the upstream source URL and `opengym.ch` print-footer URL remain
+unchanged. Compatibility identifiers, persistence/cache keys, API/protocol strings, filenames,
+native filesystem paths, package/bundle identifiers, and backend `RP_NAME` were not changed.
+
+Correction validation performed in this worktree only:
+
+- Red regressions reproduced the rewritten native backup path and the unbranded plain-`t()`
+  plural-object fallback before the correction.
+- Focused Vitest with one worker: 80 tests across i18n core/plural, BackupFolderRow, CSP, and
+  branding suites passed.
+- `npm run build` passed, with the existing Vite chunk-size and ineffective-dynamic-import
+  warnings only.
+- Playwright with one worker: all 4 existing branding cases passed (two specs on Chromium desktop
+  and Chromium mobile). The local API was intentionally absent, so `/api/config` and `/api/me`
+  logged expected connection refusals while guest journeys completed.
+
 `branding-web.Dockerfile` overlays only the final frontend on the exact production image,
 retaining existing hashed chunks and exercise media. The inline script retains the existing
 CSP hash. Deployment must recreate only the `web` service with `--no-deps`, retain a copy
