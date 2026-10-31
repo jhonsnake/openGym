@@ -91,7 +91,7 @@ const mount = async () => {
   await act(async () => { root.render(<Settings page="about" />) })
   await act(async () => { for (let i = 0; i < 4; i++) await Promise.resolve() })
 }
-const updateRow = () => [...host.querySelectorAll('.lrow')].find(r => r.textContent.includes('Update to openGym v9.9.9'))
+const updateRow = () => [...host.querySelectorAll('.lrow')].find(r => r.textContent.includes('Update to JohnGym v9.9.9'))
 const checkRow = () => [...host.querySelectorAll('.lrow')].find(r => r.textContent.includes('Check for updates'))
 const webRow = () => [...host.querySelectorAll('.lrow')].find(r => r.textContent.includes('Get the Android app'))
 
@@ -102,6 +102,24 @@ describe('Settings — in-app update check', () => {
     expect(updateRow()).toBeUndefined()
     expect(checkRow()).toBeUndefined()
     expect(webRow()).toBeTruthy()
+  })
+
+  it('hides upstream donation controls on the web while retaining license attribution and source', async () => {
+    await mount()
+    expect(host.textContent).not.toContain('Support JohnGym')
+    expect(host.textContent).not.toContain('Buy me a coffee')
+    expect(host.textContent).not.toContain('Ko-fi')
+    expect(host.textContent).toContain('Media licensed for use in openGym only')
+    expect([...host.querySelectorAll('a')].find(a => a.textContent === 'Source code')).toBeTruthy()
+  })
+
+  it('retains native donation controls', async () => {
+    mocks.MOBILE = true
+    mocks.android = true
+    await mount()
+    expect(host.textContent).toContain('Support JohnGym')
+    expect(host.textContent).toContain('Buy me a coffee')
+    expect(host.textContent).toContain('Ko-fi')
   })
 
   it('mobile build on iOS: no check, no row, no section', async () => {

@@ -5,7 +5,7 @@
 // update(), whose test-mode check throws if the previous state was changed in place.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../lib/api.js', () => ({ api: vi.fn() }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }))
 
 import { useStore } from './useStore.js'
 import { mergeHeartRate, mergeWeighIns } from '../lib/health-read.js'

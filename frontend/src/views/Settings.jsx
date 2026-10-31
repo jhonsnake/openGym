@@ -969,7 +969,8 @@ export default function Settings({ page = null, find = null, via = null, entryKe
       </Section>
       {/* Support: the project's own donation pages, and on the iPhone a straight line to writing a
           review. Plain links, no pop-up asking for anything (App Store 5.6.1). */}
-      <Section title={t('Support openGym')} footer={t('openGym is free: no ads, no subscriptions, no tracking. A coffee keeps it that way.')}>
+      {/* Upstream donation links are not a JohnGym payment/support destination. */}
+      {MOBILE && <Section title={t('Support openGym')} footer={t('openGym is free: no ads, no subscriptions, no tracking. A coffee keeps it that way.')}>
         {MOBILE && ios && <Row icon="star" iconTint="var(--orange)" title={t('Rate openGym on the App Store')} accessory="chevron"
           onClick={() => window.open('https://apps.apple.com/app/id6822275400?action=write-review', '_blank', 'noopener')} />}
         <Row icon="heart" iconTint="var(--pink)" title={t('Buy me a coffee')} subtitle="Buy Me a Coffee" accessory="chevron"
@@ -978,7 +979,7 @@ export default function Settings({ page = null, find = null, via = null, entryKe
           onClick={() => window.open('https://ko-fi.com/opengym', '_blank', 'noopener')} />
         <Row icon="heart" iconTint="var(--purple)" title="GitHub Sponsors" accessory="chevron"
           onClick={() => window.open('https://github.com/sponsors/DuarteSantos8', '_blank', 'noopener')} />
-      </Section>
+      </Section>}
       {/* "Add to Home screen": not inside the phone app, and not once it is installed. Safari's
           Share menu only on Apple (an iPad says Macintosh too); Windows and Linux get Chrome's
           install icon instead of an iPhone tip. */}
@@ -1058,7 +1059,9 @@ export default function Settings({ page = null, find = null, via = null, entryKe
       {/* Signed in or paired: the account can be deleted from here (App Store rule 5.1.1(v)). A
           phone in local-only mode has no account; "Reset everything" in Data & backup wipes it. */}
       {user && !DEMO && <Section>
-        <DeleteAccountRow exportBackup={doExport} exportBackupZip={doExportZip} hasMedia={hasMedia} done={() => nav('/home')} />
+        {config?.managed_subscriptions
+          ? <Row icon="trash" iconTint="var(--red)" title="Solicitar eliminación de cuenta" subtitle="Registra una solicitud; no elimina datos ahora." danger accessory="chevron" onClick={() => nav('/account/data')} />
+          : <DeleteAccountRow exportBackup={doExport} exportBackupZip={doExportZip} hasMedia={hasMedia} done={() => nav('/home')} />}
       </Section>}
       {/* The connection banner already says this to a guest; the line is for when it is switched
           off, or its × hid it (#454). */}

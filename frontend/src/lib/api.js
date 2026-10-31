@@ -28,6 +28,13 @@ export function setRemoteAuth(base, token) { remoteBase = base || ''; remoteToke
 let accessHeaders = {}
 let accessOrigin = ''
 export function setAccessHeaders(h, origin) { accessHeaders = Object.assign({}, h); accessOrigin = origin || '' }
+// M1 installs this narrow, fail-closed seam before any legacy personal transport starts.  It is
+// deliberately kept here rather than in a view: sync, XHR media and background work all share
+// these helpers.  The guard is unset in upstream/M0 and native flows.
+let managedTransportGuard = null
+export function setManagedTransportGuard(guard) { managedTransportGuard = typeof guard === 'function' ? guard : null }
+const guardTransport = (path, opts) => managedTransportGuard ? managedTransportGuard(path, opts || {}) : Promise.resolve()
+const noteTransportError = error => managedTransportGuard?.noteHttpError?.(error)
 const originOf = base => { try { return new URL(base).origin } catch { return '' } }
 const accessFor = base => (base && accessOrigin && originOf(base) === accessOrigin ? accessHeaders : {})
 const remoteHeaders = () => Object.assign({}, accessFor(remoteBase), remoteToken ? { Authorization: 'Bearer ' + remoteToken } : {})
@@ -58,7 +65,9 @@ function refusal(status, body) {
 }
 
 export async function api(path, opts) {
-  const { timeout, ...init } = opts || {}
+  const effectiveOpts = opts || {}
+  await guardTransport(path, effectiveOpts)
+  const { timeout, ...init } = effectiveOpts
   // A phone with no server to talk to: local mode, or a pairing that is gone. There is no
   // relative URL to fall back on here — the WebView's own origin is Capacitor's local asset
   // server, which answers ANY path, PUT included, with index.html and a 200, so a push "landed"
@@ -70,7 +79,8 @@ export async function api(path, opts) {
   // is served, so a subpath deployment reaches its own API instead of the proxy's root.
   const url = remoteBase ? remoteBase + path : appBase().replace(/\/$/, '') + path
   const ms = timeout != null ? timeout : (init.method || 'GET').toUpperCase() === 'GET' ? TIMEOUT_GET_MS : TIMEOUT_MS
-  return request(url, Object.assign({}, init, { headers }), ms)
+  try { return await request(url, Object.assign({}, init, { headers }), ms) }
+  catch (error) { noteTransportError(error); throw error }
 }
 
 // One exchange, bounded by `ms`. No status on the timeout, like a fetch that failed outright: to
@@ -112,6 +122,18 @@ async function exchange(url, init) {
 // every "left" to https://localhost/api/activity. The api() call beside it reaches the server.
 export function beacon(path, body) {
   if (MOBILE) return false
+  // A managed decision is asynchronous, so sendBeacon cannot be a safe fallback there: it would
+  // submit before the authority refresh resolved.  Keep M0's native unload transport unchanged;
+  // M1 uses fetch keepalive after the guard has allowed the exact protected request.
+  if (managedTransportGuard) {
+    const init = { method: 'POST', keepalive: true }
+    return guardTransport(path, init).then(() => {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers, remoteHeaders())
+      return fetch(remoteBase ? remoteBase + path : appBase().replace(/\/$/, '') + path, Object.assign({}, init, {
+        headers, body: JSON.stringify(body),
+      })).then(() => true, () => false)
+    }, () => false)
+  }
   try {
     if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false
     return !!navigator.sendBeacon(appBase().replace(/\/$/, '') + path, new Blob([JSON.stringify(body)], { type: 'application/json' }))
@@ -137,6 +159,7 @@ const timedOut = () => failure(t('The server did not answer in time.'), 'timeout
  * Errors carry { status, code } like api()'s: the server's code on a refusal (media-missing).
  */
 export async function apiBlob(path, { expectSize, idleMs = 30000, fetchImpl = globalThis.fetch } = {}) {
+  await guardTransport(path, { method: 'GET' })
   if (MOBILE && !remoteBase) throw notPaired()
   const max = typeof expectSize === 'number' && expectSize >= 0 ? expectSize + 1024 : Infinity
   const ctl = typeof AbortController === 'function' ? new AbortController() : null
@@ -179,8 +202,9 @@ export async function apiBlob(path, { expectSize, idleMs = 30000, fetchImpl = gl
     }
     return new Blob(parts)
   } catch (e) {
-    if (idle) throw timedOut()
-    throw e
+    const error = idle ? timedOut() : e
+    noteTransportError(error)
+    throw error
   } finally { clearTimeout(timer) }
 }
 
@@ -192,8 +216,9 @@ export async function apiBlob(path, { expectSize, idleMs = 30000, fetchImpl = gl
  * that is not the API's JSON (nginx's client_max_body_size, Cloudflare's 100 MB); 'timeout' after
  * `idleMs` without progress; no status at all when the network failed.
  */
-export function apiUpload(path, blob, mime, { onProgress, idleMs = 60000, XHR = globalThis.XMLHttpRequest } = {}) {
-  if (MOBILE && !remoteBase) return Promise.reject(notPaired())
+export async function apiUpload(path, blob, mime, { onProgress, idleMs = 60000, XHR = globalThis.XMLHttpRequest } = {}) {
+  await guardTransport(path, { method: 'PUT' })
+  if (MOBILE && !remoteBase) throw notPaired()
   return new Promise((resolve, reject) => {
     const xhr = new XHR()
     let timer = null
@@ -214,16 +239,16 @@ export function apiUpload(path, blob, mime, { onProgress, idleMs = 60000, XHR = 
         else reject(failure(t('The server answered with something other than openGym data.'), 'bad-response', xhr.status))
         return
       }
-      if (xhr.status === 413 && !body) { reject(failure('HTTP 413', 'proxy-too-large', 413)); return }
+      if (xhr.status === 413 && !body) { const e = failure('HTTP 413', 'proxy-too-large', 413); noteTransportError(e); reject(e); return }
       const e = Object.assign(new Error(refusal(xhr.status, body)), { status: xhr.status, code: (body && body.code) || 'http', data: body || {} })
       if (xhr.status === 429) {
         const header = Number(xhr.getResponseHeader && xhr.getResponseHeader('Retry-After'))
         e.retryAfter = Number(body && body.retryAfter) || (Number.isFinite(header) && header > 0 ? header : 60)
       }
-      reject(e)
+      noteTransportError(e); reject(e)
     }
-    xhr.onerror = () => { clearTimeout(timer); reject(Object.assign(new Error('network'), { code: 'network' })) }
-    xhr.onabort = () => { clearTimeout(timer); reject(idle ? timedOut() : Object.assign(new Error('aborted'), { code: 'network' })) }
+    xhr.onerror = () => { clearTimeout(timer); const e = Object.assign(new Error('network'), { code: 'network' }); noteTransportError(e); reject(e) }
+    xhr.onabort = () => { clearTimeout(timer); const e = idle ? timedOut() : Object.assign(new Error('aborted'), { code: 'network' }); noteTransportError(e); reject(e) }
     arm()
     xhr.send(blob)
   })
@@ -387,8 +412,10 @@ export function passkeyError(e, fallback) {
   }
   return e?.message || fallback
 }
-export async function passkeyRegister(name, code) {
-  const { cid, options } = await api('/api/register/options', { method: 'POST', body: JSON.stringify({ name, code: code || '' }) })
+export async function passkeyRegister(name, code, inviteToken) {
+  const body = { name, code: code || '' }
+  if (typeof inviteToken === 'string' && /^[A-Za-z0-9_-]{43}$/.test(inviteToken)) body.inviteToken = inviteToken
+  const { cid, options } = await api('/api/register/options', { method: 'POST', body: JSON.stringify(body) })
   const cred = await navigator.credentials.create({ publicKey: toCreationOptions(options) })
   const res = await api('/api/register/verify', { method: 'POST', body: JSON.stringify({ cid, credential: credToJSON(cred) }) })
   return res.user
@@ -428,8 +455,10 @@ export async function passwordLogin(name, password) {
 }
 // `email` is optional, and sent only when there is one: a server from before the field would
 // otherwise ignore it without a word, which is the same thing.
-export async function passwordRegister(name, password, code, email) {
-  return (await post('/api/register/password', { name, password, code: code || '', ...(email ? { email } : {}) })).user
+export async function passwordRegister(name, password, code, email, inviteToken) {
+  const body = { name, password, code: code || '', ...(email ? { email } : {}) }
+  if (typeof inviteToken === 'string' && /^[A-Za-z0-9_-]{43}$/.test(inviteToken)) body.inviteToken = inviteToken
+  return (await post('/api/register/password', body)).user
 }
 export async function passwordResetRedeem(name, code, next) {
   return (await post('/api/login/password-reset', { name, code, next })).user

@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../lib/api.js', () => ({ api: vi.fn(), setRemoteAuth: vi.fn() }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), setRemoteAuth: vi.fn() }))
 
 import { DEF, useStore } from './useStore.js'
 

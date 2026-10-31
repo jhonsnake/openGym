@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({ api: null, toasts: [] }))
-vi.mock('../lib/api.js', () => ({ api: (...a) => h.api(...a), setRemoteAuth: () => {} }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: (...a) => h.api(...a), setRemoteAuth: () => {} }))
 vi.mock('./useUI.js', () => ({ useUI: { getState: () => ({ toast: m => h.toasts.push(m), stopRest: () => {}, abandonWork: () => {} }) } }))
 
 const clone = v => JSON.parse(JSON.stringify(v))

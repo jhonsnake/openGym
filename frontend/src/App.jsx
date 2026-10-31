@@ -41,6 +41,11 @@ import { SeasonalLayer } from './components/Seasonal.jsx'
 import { openDeviceLinkRedeem } from './components/Passkeys.jsx'
 import { useAnimPacksBoot } from './components/Animations.jsx'
 import Login from './views/Login.jsx'
+import { ManagedAccessBoundary } from './components/ManagedAccess.jsx'
+import InvitationFlow from './components/InvitationFlow.jsx'
+import OwnedDataActions from './components/OwnedDataActions.jsx'
+import { currentInvitation, subscribeInvitation } from './lib/invitation-receiver.js'
+import { managedWebOrDeniedHint } from './lib/managed-bridge.js'
 import MobileOnboarding from './views/MobileOnboarding.jsx'
 import PermissionSteps from './views/PermissionSteps.jsx'
 import Home from './views/Home.jsx'
@@ -63,6 +68,11 @@ function lazyView(load) {
   }
 }
 const Admin = lazyView(() => import('./views/Admin.jsx'))
+const ManagedOperations = lazyView(() => import('./views/ManagedOperations.jsx'))
+const Trainer = lazyView(() => import('./views/Trainer.jsx'))
+const ClientTraining = lazyView(() => import('./views/ClientTraining.jsx'))
+const ClientConsent = lazyView(() => import('./views/ClientConsent.jsx'))
+const Commercial = lazyView(() => import('./views/Commercial.jsx'))
 const CoachChat = lazyView(() => import('./views/CoachChat.jsx'))
 const Measurements = lazyView(() => import('./views/Measurements.jsx'))
 const CoachIntake = lazyView(() => import('./views/CoachIntake.jsx'))
@@ -116,6 +126,8 @@ function Shell() {
   const loc = useLocation()
   const navType = useNavigationType()
   const { S, user, ready } = useStore()
+  const [, setInvitationTick] = useState(0)
+  useEffect(() => subscribeInvitation(() => setInvitationTick(value => value + 1)), [])
   // iOS: whether timer sounds get past the ring/silent switch (Settings → Sounds). Page-level,
   // so it is applied here on load and on change rather than at each beep.
   useEffect(() => { setPlayOnSilent(!!S.soundOnSilent) }, [S.soundOnSilent])
@@ -292,7 +304,55 @@ function Shell() {
     </div>
   )
 
-  const view = l => (!authed ? <Login /> : needsMobileOnboarding ? <MobileOnboarding /> : permSteps ? <PermissionSteps /> : (
+  const managedRoutes = (l, authority) => {
+    const canManageOperations = authority.access.capabilities.includes('MANAGE_OPERATIONAL_ROLES')
+    const canTrain = authority.access.capabilities.includes('CREATE_INVITATION')
+    const canCommercial = authority.access.roles.includes('COORDINATOR')
+    const fallback = canTrain ? '/trainer' : canManageOperations ? '/admin/operations' : canCommercial ? '/commercial' : '/home'
+    if (!authority.personalAllowed) return <Routes location={l}>
+      <Route path="/account/consent" element={<ClientConsent client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} />} />
+      <Route path="/trainer" element={canTrain ? <Trainer client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /> : <Navigate to={fallback} replace />} />
+      <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to={fallback} replace />} />
+      <Route path="/admin/operations" element={canManageOperations ? <ManagedOperations client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /> : <Navigate to={fallback} replace />} />
+      <Route path="/commercial" element={canCommercial ? <Commercial client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /> : <Navigate to={fallback} replace />} />
+      <Route path="/account/data" element={<section className="narrow"><OwnedDataActions client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /></section>} />
+      <Route path="*" element={<Navigate to={fallback} replace />} />
+    </Routes>
+    return <Routes location={l}>
+      <Route path="/personal/training" element={<ClientTraining client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} />} />
+      <Route path="/account/consent" element={<ClientConsent client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} />} />
+      <Route path="/home" element={<Home />} />
+      {S.checkIn !== false && <Route path="/checkin" element={<CheckIn />} />}
+      <Route path="/plan" element={<Plan />} />
+      <Route path="/plan/r/:id" element={<RoutineEdit />} />
+      <Route path="/workout" element={<Workout />} />
+      <Route path="/stats" element={<Stats />} />
+      <Route path="/history" element={<History />} />
+      <Route path="/library" element={<Library />} />
+      <Route path="/muscles" element={<Muscles />} />
+      <Route path="/structural-balance" element={<StructuralBalance />} />
+      <Route path="/progress-photos" element={<ProgressPhotos />} />
+      <Route path="/measurements" element={<Measurements />} />
+      <Route path="/settings" element={<SettingsRoute />} />
+      <Route path="/settings/:page" element={<SettingsRoute />} />
+      <Route path="/coach" element={<CoachChat />} />
+      <Route path="/coach/intake" element={<CoachIntake />} />
+      <Route path="/coach/proposal" element={<Navigate to="/coach" replace />} />
+      <Route path="/coach/setup" element={<CoachSetup />} />
+      <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
+      <Route path="/trainer" element={canTrain ? <Trainer client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /> : <Navigate to="/home" replace />} />
+      <Route path="/admin/operations" element={canManageOperations ? <ManagedOperations client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /> : <Navigate to="/home" replace />} />
+      <Route path="/commercial" element={canCommercial ? <Commercial client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /> : <Navigate to="/home" replace />} />
+      <Route path="/account/data" element={<section className="narrow"><OwnedDataActions client={authority.api} access={authority.access} reportHttpError={authority.reportHttpError} /></section>} />
+      <Route path="*" element={<Navigate to="/home" replace />} />
+    </Routes>
+  }
+
+  const view = l => (!authed ? <Login /> : user && !ready ? <section className="narrow" aria-live="polite"><h1>Comprobando sesión</h1><p className="muted">Verificando la configuración de acceso.</p></section> : user && currentInvitation() ? <InvitationFlow key={user.id} onSignOut={() => useStore.getState().signOut()} /> : needsMobileOnboarding ? <MobileOnboarding /> : permSteps ? <PermissionSteps /> : user && managedWebOrDeniedHint(config) ? (
+    <ManagedAccessBoundary key={user.id} account={user} onSignOut={() => useStore.getState().signOut()} backoffice={authority => managedRoutes(l, authority)}>
+      {authority => managedRoutes(l, authority)}
+    </ManagedAccessBoundary>
+  ) : (
     <Routes location={l}>
       <Route path="/home" element={<Home />} />
       {/* Gym check-in — switched off in Settings, the route falls through to the

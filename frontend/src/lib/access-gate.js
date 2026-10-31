@@ -1,6 +1,9 @@
 const PROTECTED_STATUSES = new Set([401, 403, 409, 426])
 const ROLES = new Set(['CLIENT', 'TRAINER', 'COORDINATOR'])
-const CAPABILITIES = new Set(['ACCESS_PERSONAL_TRAINING', 'MANAGE_OPERATIONAL_ROLES', 'MANAGE_COORDINATOR_SCOPE', 'CREATE_INVITATION', 'CONFIRM_RELATION', 'CHANGE_RELATION', 'CHANGE_GRANT', 'PUBLISH_PLAN', 'READ_CLIENT_PLAN', 'READ_OWN_EXECUTIONS', 'START_SESSION', 'FINISH_SESSION', 'READ_TRAINER_EXECUTIONS', 'CONFIRM_SUBSCRIPTION', 'READ_COMMERCIAL_CLIENTS', 'EXPORT_OWN_DATA', 'REQUEST_OWN_DELETION'])
+// Keep this closed list aligned with api/authority-contract.js. An unknown capability is not
+// a harmless future feature: accepting it here could make a stale client draw a control it does
+// not understand how to constrain.
+const CAPABILITIES = new Set(['ACCESS_PERSONAL_TRAINING', 'MANAGE_OPERATIONAL_ROLES', 'MANAGE_COORDINATOR_SCOPE', 'CREATE_INVITATION', 'PREVIEW_INVITATION', 'ACCEPT_INVITATION', 'CONFIRM_RELATION', 'CHANGE_RELATION', 'CHANGE_GRANT', 'PUBLISH_PLAN', 'READ_CLIENT_PLAN', 'READ_OWN_EXECUTIONS', 'START_SESSION', 'FINISH_SESSION', 'READ_TRAINER_EXECUTIONS', 'CONFIRM_SUBSCRIPTION', 'READ_COMMERCIAL_CLIENTS', 'EXPORT_OWN_DATA', 'REQUEST_OWN_DELETION'])
 
 const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype
 const cloneFreeze = (value, seen = new WeakSet()) => {
@@ -28,11 +31,11 @@ function validateAccess(value) {
   const { startUtc, endExclusiveUtc } = value.entitlement
   if (value.entitlement.active ? !(utc(startUtc) && utc(endExclusiveUtc) && Date.parse(startUtc) < Date.parse(endExclusiveUtc)) : !(startUtc === null && endExclusiveUtc === null)) return { ok: false, reason: 'malformed-access' }
   if (value.compatibility.protectedTraining !== 'supported') return { ok: false, reason: 'unsupported-client' }
-  if (!value.managedSubscriptions) return { ok: true }
-  if (!value.roles.includes('CLIENT')) return { ok: false, reason: 'client-role-required' }
-  if (value.entitlement.active !== true) return { ok: false, reason: 'not-entitled' }
-  if (!value.capabilities.includes('ACCESS_PERSONAL_TRAINING')) return { ok: false, reason: 'personal-training-forbidden' }
-  return { ok: true }
+  if (!value.managedSubscriptions) return { ok: true, personal: true }
+  if (!value.roles.includes('CLIENT')) return { ok: true, personal: false, reason: 'client-role-required' }
+  if (value.entitlement.active !== true) return { ok: true, personal: false, reason: 'not-entitled' }
+  if (!value.capabilities.includes('ACCESS_PERSONAL_TRAINING')) return { ok: true, personal: false, reason: 'personal-training-forbidden' }
+  return { ok: true, personal: true }
 }
 
 export function createAccessGate({ getAccess } = {}) {
@@ -49,7 +52,15 @@ export function createAccessGate({ getAccess } = {}) {
       if (mine !== generation) return state
       const decision = validateAccess(answer)
       if (!decision.ok) return set({ status: 'blocked', reason: decision.reason })
-      try { return set({ status: 'allowed', reason: reason === 'explicit' ? 'authority-confirmed' : reason, access: cloneFreeze(answer) }) } catch { return set({ status: 'blocked', reason: 'malformed-access' }) }
+      // Operational roles are independent from a person's CLIENT entitlement. Keep the
+      // validated snapshot even in a denied personal state so a trainer/coordinator can reach
+      // only their server-authorized backoffice entry; never infer either from cached roles.
+      try {
+        const access = cloneFreeze(answer)
+        return decision.personal
+          ? set({ status: 'allowed', reason: reason === 'explicit' ? 'authority-confirmed' : reason, access })
+          : set({ status: 'blocked', reason: decision.reason, access })
+      } catch { return set({ status: 'blocked', reason: 'malformed-access' }) }
     } catch (error) {
       if (mine !== generation) return state
       return set({ status: 'blocked', reason: error?.status ? `server-status-${error.status}` : 'authority-unavailable', error })
@@ -63,6 +74,8 @@ export function createAccessGate({ getAccess } = {}) {
     invalidate: (reason = 'invalidated') => { generation++; return set({ status: 'unverified', reason }) },
     noteHttpError: error => PROTECTED_STATUSES.has(error?.status) ? (generation++, set({ status: 'unverified', reason: `server-status-${error.status}` })) : state,
     canProceed: () => state.status === 'allowed',
+    personalCanProceed: () => state.status === 'allowed',
+    canBackoffice: capability => !!(state.access && state.access.capabilities.includes(capability)),
   })
 }
 

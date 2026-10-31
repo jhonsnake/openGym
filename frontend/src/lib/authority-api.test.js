@@ -97,4 +97,74 @@ describe('authority-api', () => {
     await client.previewInvitation('b'.repeat(43))
     expect(transport.mock.calls[0][0]).toBe('/api/invitations/preview')
   })
+
+  it('reads the trainer invitation queue with only the server-issued opaque cursor', async () => {
+    const transport = vi.fn(async () => ({ invitations: [], nextCursor: null, versionTokens: [], requestId: 'queue-1' }))
+    const client = createAuthorityApi({ transport })
+    await client.getTrainerInvitations({ cursor: 'next opaque cursor' })
+    expect(transport).toHaveBeenCalledWith('/api/trainer/invitations?cursor=next%20opaque%20cursor', { method: 'GET' })
+  })
+
+  it('keeps required relation IDs on trainer reads and exposes the closed training-session routes', async () => {
+    const transport = vi.fn(async (path, opts) => {
+      if (opts?.method === 'GET') return { items: [], nextCursor: null, session: null, closeOnlySession: null, versionTokens: [] }
+      return { ...receipt(), operationId: JSON.parse(opts.body).operationId }
+    })
+    const client = createAuthorityApi({ transport })
+    await client.getTrainerExecutions({ relationId: id, cursor: 'next page' })
+    await client.getTrainerCurrentPlan({ relationId: id })
+    await client.getTrainerCurrentGoals({ relationId: id })
+    await client.getCurrentSession()
+    await client.abandonSession({ expectedVersion: 0, payload: { sessionId: id } })
+    await client.publishGoals({ expectedVersion: 0, payload: { relationId: id, goals: [] } })
+    expect(transport.mock.calls.map(call => call[0])).toEqual([
+      `/api/trainer/executions?relationId=${id}&cursor=next+page`,
+      `/api/trainer/plans/current?relationId=${id}`,
+      `/api/trainer/goals/current?relationId=${id}`,
+      '/api/client/sessions/current',
+      '/api/client/sessions/abandon',
+      '/api/trainer/goals/publish',
+    ])
+  })
+
+  it('uses opaque commercial cursors and closed owner export/deletion routes', async () => {
+    const transport = vi.fn(async (path, opts) => {
+      if (opts?.method === 'GET') return path.startsWith('/api/admin/commercial') ? { clients: [], nextCursor: null } : { schema: 'opengym.owned-export.v1' }
+      return { ...receipt({ jobId: id, state: 'READY' }), operationId: JSON.parse(opts.body).operationId }
+    })
+    const client = createAuthorityApi({ transport })
+    await client.getCommercialClients({ cursor: 'opaque client page' })
+    await client.requestOwnedExport({ expectedVersion: 2, payload: {} })
+    await client.getOwnedExport(id)
+    await client.requestDeletion({ expectedVersion: 3, payload: {} })
+    expect(transport.mock.calls[0][0]).toBe('/api/admin/commercial/clients?cursor=opaque%20client%20page')
+    expect(transport.mock.calls[1][0]).toBe('/api/client/exports')
+    expect(JSON.parse(transport.mock.calls[1][1].body).payload).toEqual({})
+    expect(transport.mock.calls[2][0]).toBe('/api/client/exports/' + id)
+    expect(transport.mock.calls[3][0]).toBe('/api/client/deletion-requests')
+  })
+
+  it('uses the closed role and scope routes and paginates only with the server cursor', async () => {
+    const transport = vi.fn(async (path, opts) => {
+      if (opts?.method === 'GET') return path.startsWith('/api/admin/operations/scopes')
+        ? { scopes: [], requestId: 'read-1', nextCursor: null }
+        : { users: [], requestId: 'read-1', nextCursor: null }
+      return { ...receipt(), operationId: JSON.parse(opts.body).operationId }
+    })
+    const client = createAuthorityApi({ transport })
+    await client.getAdminUsers({ cursor: 'opaque cursor' })
+    await client.getAdminScopes({ coordinatorId: 'coord/id', clientId: 'client id', cursor: 'opaque scope cursor' })
+    await client.setOperationalRoles({ expectedVersion: 4, payload: { accountId: 'exact-server-id', roles: ['CLIENT', 'TRAINER'], reason: 'revisión' } })
+    await client.setCoordinatorScope({ expectedVersion: 0, payload: { coordinatorId: 'coord', clientId: 'client', assigned: true, reason: 'cobertura' } })
+    expect(transport.mock.calls[0][0]).toBe('/api/admin/operations/users?cursor=opaque%20cursor')
+    expect(transport.mock.calls[1][0]).toBe('/api/admin/operations/scopes?coordinatorId=coord%2Fid&clientId=client+id&cursor=opaque+scope+cursor')
+    expect(transport.mock.calls[2][0]).toBe('/api/admin/operations/roles')
+    expect(JSON.parse(transport.mock.calls[2][1].body).payload.roles).toEqual(['CLIENT', 'TRAINER'])
+    expect(transport.mock.calls[3][0]).toBe('/api/admin/operations/scopes')
+  })
+
+  it('rejects malformed scope readback instead of inventing a version', async () => {
+    const client = createAuthorityApi({ transport: vi.fn(async () => ({ scopes: [{ coordinatorId: 'coord', clientId: 'client', assigned: true, version: -1 }], nextCursor: null, requestId: 'read' })) })
+    await expect(client.getAdminScopes({ coordinatorId: 'coord', clientId: 'client' })).rejects.toThrow(/scope/i)
+  })
 })

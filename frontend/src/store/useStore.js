@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api, setRemoteAuth } from '../lib/api.js'
+import { activateManagedBridge, deactivateManagedBridge, rememberManagedMode, managedModeHint } from '../lib/managed-bridge.js'
 import { localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { registerCustom, healCustomEx } from '../lib/exercises.js'
@@ -1598,7 +1599,13 @@ export const useStore = create((set, get) => {
     async refreshConfig() {
       if (configFetch) return configFetch
       configFetch = (async () => {
-        try { const c = await api('/api/config'); rememberDefaultLang(c); set({ config: c }); return c }
+        try {
+          const c = await api('/api/config'); rememberDefaultLang(c); rememberManagedMode(c); set({ config: c })
+          // T6 publishes this marker only in M1.  Do not infer it from any other public config
+          // field: an absent/failed config remains the upstream M0 path.
+          if (get().user) activateManagedBridge({ account: get().user, config: c })
+          return c
+        }
         catch { return null }
         finally { configFetch = null }
       })()
@@ -1609,6 +1616,10 @@ export const useStore = create((set, get) => {
     // decides what becomes of this copy; until it has, nothing is pulled or pushed (ADOPT_KEY).
     setUser(u, { adopt } = {}) {
       if (u) {
+        // Install the transport boundary before adoption, pull, or a debounced legacy push can
+        // run.  The promise is intentionally not trusted as authorization; api() waits for a
+        // fresh access read for every protected legacy request.
+        activateManagedBridge({ account: u, config: get().config })
         // The local copy belongs to whoever last signed in here. When a session expires or is
         // revoked elsewhere, boot() only drops the user and the data stays; a different profile
         // signing in next must not inherit it (pullState would push it into that account, and
@@ -1672,7 +1683,7 @@ export const useStore = create((set, get) => {
         // nothing on this path waits for the answer. A copy that has the key was made for a
         // session and is already the right answer, Coach or no Coach.
         if (get().config && !('coach' in get().config)) get().refreshConfig()
-      } else { rejoined = false; adoptHold = false; localStorage.removeItem('gym_user') }
+      } else { rejoined = false; adoptHold = false; deactivateManagedBridge(); localStorage.removeItem('gym_user') }
       set({ user: u })
       setSync({ held: adoptHold })
     },
@@ -2057,7 +2068,7 @@ export const useStore = create((set, get) => {
       // boot. Ending the session needs a positive `allow_guest: false`; see lib/guest.js for why
       // an unreachable server must not be allowed to lock anyone out (#42).
       const cfg = await get().loadConfig()
-      if (!guestAllowed(cfg)) get().setGuest(false)
+      if (!guestAllowed(cfg, { managedHint: managedModeHint() })) get().setGuest(false)
       // A sign-out that could not reach the server: finish it first. Still unanswered, the
       // browser stays signed out rather than adopt the session it left behind.
       if (logoutOwed()) {

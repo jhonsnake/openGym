@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({ api: null }))
-vi.mock('../lib/api.js', () => ({ api: (...a) => h.api(...a), setRemoteAuth: () => {} }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: (...a) => h.api(...a), setRemoteAuth: () => {} }))
 vi.mock('./useUI.js', () => ({ useUI: { getState: () => ({ toast: () => {}, stopRest: () => {}, abandonWork: () => {} }) } }))
 
 // The store's heavy imports (the 1 MB exercise table, the sync and mobile libraries) are

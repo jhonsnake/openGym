@@ -6,7 +6,7 @@
    it in (views/Settings.jsx doImport). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../lib/api.js', () => ({ api: vi.fn(), setRemoteAuth: vi.fn() }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), setRemoteAuth: vi.fn() }))
 vi.mock('./useUI.js', () => ({ useUI: { getState: () => ({ toast: vi.fn() }) } }))
 
 import { api } from '../lib/api.js'

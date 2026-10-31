@@ -8,6 +8,7 @@
 # specific native binaries, which is what breaks `vite build` with unrelated-looking
 # module-resolution errors.
 ARG BUILTIN_EXERCISE_MEDIA=0
+ARG MANAGED_SUBSCRIPTIONS_HINT=0
 FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS build
 # The frontend sits at /app/frontend, not /app: the Coach's runtime-neutral core lives in
 # api/coach/core and is imported from frontend/src as ../../../api/coach/core/*, so the two
@@ -27,8 +28,11 @@ COPY frontend/ ./
 ARG APP_BUILD=""
 # The commercial default ships no Gym Visual assets; personal-test opts in explicitly.
 ARG BUILTIN_EXERCISE_MEDIA
+ARG MANAGED_SUBSCRIPTIONS_HINT
 ENV VITE_BUILTIN_EXERCISE_MEDIA=${BUILTIN_EXERCISE_MEDIA}
+ENV VITE_MANAGED_SUBSCRIPTIONS_HINT=${MANAGED_SUBSCRIPTIONS_HINT}
 RUN case "$BUILTIN_EXERCISE_MEDIA" in 0|1) ;; *) echo "BUILTIN_EXERCISE_MEDIA must be 0 or 1" >&2; exit 1 ;; esac
+RUN case "$MANAGED_SUBSCRIPTIONS_HINT" in 0|1) ;; *) echo "MANAGED_SUBSCRIPTIONS_HINT must be 0 or 1" >&2; exit 1 ;; esac
 RUN APP_BUILD="$APP_BUILD" npm run build
 
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine AS runtime
@@ -115,7 +119,7 @@ ENV MEDIA_UPLOAD_MAX=48m
 # chose, an Ollama on their LAN included, and the update check asks GitHub. Behind a proxy that
 # injects a script of its own (analytics), set this to a policy that allows it, or to
 # "frame-ancestors 'none'" for the old header.
-ENV CONTENT_SECURITY_POLICY="default-src 'self'; script-src 'self' 'sha256-xUZtZS1nWJaAyUqA7ZKgkLhjdEisnY0MiRmax16aGFg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self' https: http:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+ENV CONTENT_SECURITY_POLICY="default-src 'self'; script-src 'self' 'sha256-NgDLN3odTt3Q3EKeAgzv5jhM+yD6SRGhh7LNrh1zjso=' 'sha256-QOiIMyX3uUAAL4LoLjmHwCvDloAJOtGnR1EPIYBliVs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self' https: http:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 # Probe the port nginx was actually told to listen on (NGINX_PORT is configurable, so a
 # hardcoded http://localhost/ breaks on any instance that changed it), and address it as

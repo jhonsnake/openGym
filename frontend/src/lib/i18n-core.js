@@ -12,6 +12,7 @@ export const LANGS = {
 // Languages with exercise instructions / names, generated from catalogue/i18n by
 // scripts/catalogue/build.mjs. A pack can be partial; what it lacks shows in English.
 import { INSTR_LANGS, EXERCISE_NAME_LANGS } from './catalogue-langs.js'
+import { brandVisibleProductText } from './visible-brand-source-keys.js'
 export { INSTR_LANGS, EXERCISE_NAME_LANGS }
 // Languages rendered right-to-left; i18n.js setLang applies the direction from this.
 export const RTL_LANGS = new Set(['ar'])
@@ -83,6 +84,7 @@ export function t(s, ...args) {
     const forms = v
     v = (typeof args[0] === 'number' && forms[pluralCategory(args[0])]) || forms.other || forms.many || forms.one || s
   }
+  v = brandVisibleProductText(s, v, { englishSource: v === s || !dict[s] })
   for (let i = 0; i < args.length; i++) v = v.replaceAll('{' + i + '}', args[i])
   return v
 }
@@ -118,7 +120,7 @@ export function tn(one, other, n, ...rest) {
   if (forms && typeof forms === 'object') {
     const form = forms[pluralCategory(n)] || forms.other || forms.many || forms.one
     if (form) {
-      let v = form
+      let v = brandVisibleProductText(other, form, { englishSource: form === one || form === other })
       const args = [n, ...rest]
       for (let i = 0; i < args.length; i++) v = v.replaceAll('{' + i + '}', args[i])
       return v

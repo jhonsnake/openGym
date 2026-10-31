@@ -4,7 +4,7 @@
    it was made on (lib/sync-merge.js stampChange), so it wins over what it had already seen. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../lib/api.js', () => ({ api: vi.fn(), setRemoteAuth: vi.fn() }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), setRemoteAuth: vi.fn() }))
 vi.mock('./useUI.js', () => ({ useUI: { getState: () => ({ toast: vi.fn() }) } }))
 
 import { DEF, useStore } from './useStore.js'

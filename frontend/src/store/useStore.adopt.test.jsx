@@ -5,7 +5,7 @@
    while open and flags offline / unsynced for the banner. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../lib/api.js', () => ({ api: vi.fn() }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }))
 const { toast, sheetAsk } = vi.hoisted(() => ({ toast: vi.fn(), sheetAsk: vi.fn() }))
 vi.mock('./useUI.js', () => ({ useUI: { getState: () => ({ toast }) } }))
 // The question an adoption resumed by the store itself asks (resumeAdoption, checkRev, Sync now).

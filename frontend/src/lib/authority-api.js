@@ -46,6 +46,15 @@ function validateReceipt(value) {
 const json = value => JSON.stringify(value)
 const get = (transport, path) => transport(path, { method: 'GET' })
 
+function validateScopeReadback(value) {
+  if (!isObject(value) || !Array.isArray(value.scopes) || (typeof value.nextCursor !== 'string' && value.nextCursor !== null) || (typeof value.nextCursor === 'string' && !value.nextCursor) || typeof value.requestId !== 'string' || !value.requestId) throw new TypeError('invalid scope readback')
+  const scopes = value.scopes.map(scope => {
+    if (!isObject(scope) || typeof scope.coordinatorId !== 'string' || !scope.coordinatorId || typeof scope.clientId !== 'string' || !scope.clientId || typeof scope.assigned !== 'boolean' || !Number.isSafeInteger(scope.version) || scope.version < 0) throw new TypeError('invalid scope readback row')
+    return Object.freeze({ coordinatorId: scope.coordinatorId, clientId: scope.clientId, assigned: scope.assigned, version: scope.version })
+  })
+  return Object.freeze({ scopes: Object.freeze(scopes), nextCursor: value.nextCursor, requestId: value.requestId })
+}
+
 export function createAuthorityApi({ transport = defaultTransport } = {}) {
   if (typeof transport !== 'function') throw new TypeError('authority transport must be a function')
   const attempts = new Map()
@@ -89,13 +98,35 @@ export function createAuthorityApi({ transport = defaultTransport } = {}) {
 
   return Object.freeze({
     getAccess: () => get(transport, '/api/access'),
-    getAdminUsers: () => get(transport, '/api/admin/operations/users'),
+    getAdminUsers: ({ cursor } = {}) => get(transport, `/api/admin/operations/users${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+    getAdminScopes: ({ coordinatorId, clientId, cursor } = {}) => {
+      const params = new URLSearchParams()
+      if (coordinatorId) params.set('coordinatorId', coordinatorId)
+      if (clientId) params.set('clientId', clientId)
+      if (cursor) params.set('cursor', cursor)
+      return get(transport, `/api/admin/operations/scopes${params.size ? `?${params}` : ''}`).then(validateScopeReadback)
+    },
+    setOperationalRoles: wrap('/api/admin/operations/roles', 'roles'),
+    setCoordinatorScope: wrap('/api/admin/operations/scopes', 'scope'),
     getTrainerPortfolio: () => get(transport, '/api/trainer/portfolio'),
     getTrainerRelations: () => get(transport, '/api/trainer/relations'),
-    getCommercialClients: () => get(transport, '/api/admin/commercial/clients'),
+    getTrainerInvitations: ({ cursor } = {}) => get(transport, `/api/trainer/invitations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+    getCommercialClients: ({ cursor } = {}) => get(transport, `/api/admin/commercial/clients${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+    // This is relationship metadata for the authenticated owner only.  It is the post-decision
+    // readback used by the invitation receiver; a mutation receipt is not treated as a live
+    // sharing authorization.
+    getClientRelations: ({ cursor } = {}) => get(transport, `/api/client/relations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
     getClientPlan: () => get(transport, '/api/client/plan/current'),
+    getCurrentSession: () => get(transport, '/api/client/sessions/current'),
     getClientExecutions: ({ cursor } = {}) => get(transport, `/api/client/executions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
-    getTrainerExecutions: ({ cursor } = {}) => get(transport, `/api/trainer/executions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+    getTrainerExecutions: ({ relationId, cursor } = {}) => {
+      const params = new URLSearchParams()
+      if (relationId) params.set('relationId', relationId)
+      if (cursor) params.set('cursor', cursor)
+      return get(transport, `/api/trainer/executions${params.size ? `?${params}` : ''}`)
+    },
+    getTrainerCurrentPlan: ({ relationId } = {}) => get(transport, `/api/trainer/plans/current?${new URLSearchParams({ relationId: relationId || '' })}`),
+    getTrainerCurrentGoals: ({ relationId } = {}) => get(transport, `/api/trainer/goals/current?${new URLSearchParams({ relationId: relationId || '' })}`),
     getTrainerHistory: ({ relationId, grantId, cursor } = {}) => {
       const params = new URLSearchParams()
       if (relationId) params.set('relationId', relationId)
@@ -110,6 +141,12 @@ export function createAuthorityApi({ transport = defaultTransport } = {}) {
     replaceInvitation: wrap('/api/trainer/invitations/replace', 'invitationReplace'),
     acceptInvitation: wrap('/api/invitations/accept', 'acceptInvitation'),
     rejectInvitation: wrap('/api/invitations/reject', 'invitationToken'),
+    requestOwnedExport: wrap('/api/client/exports', 'export'),
+    getOwnedExport: jobId => {
+      if (!isUuidV4(jobId)) throw new TypeError('export jobId must be UUID v4')
+      return get(transport, `/api/client/exports/${jobId}`)
+    },
+    requestDeletion: wrap('/api/client/deletion-requests', 'deletionRequest'),
     revokeInvitation: wrap('/api/trainer/invitations/revoke', 'invitationRevoke'),
     confirmRelation: relation('confirm'),
     changeRelation,
@@ -122,8 +159,10 @@ export function createAuthorityApi({ transport = defaultTransport } = {}) {
     revokeGrant: wrap('/api/client/relations/grants/revoke', 'grantRevoke'),
     confirmCommercialOperation: wrap('/api/admin/commercial/operations/confirm', 'commercial'),
     publishPlan: wrap('/api/trainer/plans/publish', 'plan'),
+    publishGoals: wrap('/api/trainer/goals/publish', 'goalsPublish'),
     startSession: wrap('/api/client/sessions/start', 'sessionStart'),
     finishSession: wrap('/api/client/sessions/finish', 'execution'),
+    abandonSession: wrap('/api/client/sessions/abandon', 'sessionClose'),
     postBodyweight: wrap('/api/client/bodyweight', 'bodyweight'),
     retry,
     clearAttempts,

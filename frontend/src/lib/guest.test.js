@@ -18,6 +18,12 @@ describe('guestAllowed', () => {
     expect(guestAllowed(undefined)).toBe(true)
   })
 
+  it('closes a fresh web boot only when its compile-time managed hint requires verification', () => {
+    expect(guestAllowed(null, { managedHint: true })).toBe(false)
+    expect(guestAllowed({ allow_guest: true }, { managedHint: true })).toBe(true)
+    expect(guestAllowed(null, { managedHint: false })).toBe(true)
+  })
+
   it('allows guests against a server too old to send the flag', () => {
     expect(guestAllowed({ invite_only: true })).toBe(true)
   })

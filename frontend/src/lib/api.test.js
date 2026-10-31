@@ -49,6 +49,21 @@ describe('api()', () => {
   })
 })
 
+describe('managed password registration transport', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('sends only an exact case-sensitive 43-character invitation token and never normalizes it', async () => {
+    const { passwordRegister } = await import('./api.js')
+    const inviteToken = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde'
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ user: { id: 'u1' } }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetch)
+    await passwordRegister('Cleo', 'correct horse battery', '', '', inviteToken)
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ name: 'Cleo', password: 'correct horse battery', code: '', inviteToken })
+    await passwordRegister('Cleo', 'correct horse battery', '', '', ` ${inviteToken}`)
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ name: 'Cleo', password: 'correct horse battery', code: '' })
+  })
+})
+
 // Every API route answers JSON. A 2xx that is not JSON is somebody else answering — Capacitor's
 // local server on a phone without a pairing, an auth proxy's login page, a proxy that sends /api/*
 // to index.html — and must never read as a server that took the change.
@@ -214,11 +229,11 @@ describe('a write refused for the wrong address', () => {
     answer(403, { error: 'cross-origin request refused', code: 'origin-mismatch', expected: 'http://localhost:8080' })
     const e = await api('/api/data', { method: 'PUT', body: '{}' }).catch(x => x)
     expect(e.status).toBe(403)
-    expect(e.message).toBe(de[KEY].replace('{0}', 'http://localhost:8080'))
+    expect(e.message).toBe(de[KEY].replace('openGym', 'JohnGym').replace('{0}', 'http://localhost:8080'))
   })
   it('a passkey refused for the same reason says the same', () => {
     const e = Object.assign(new Error('Unexpected authentication response origin ...'), { status: 400, data: { code: 'origin-mismatch', expected: 'https://gym.example.com' } })
-    expect(passkeyError(e, 'x')).toBe(KEY.replace('{0}', 'https://gym.example.com'))
+    expect(passkeyError(e, 'x')).toBe(KEY.replace('openGym', 'JohnGym').replace('{0}', 'https://gym.example.com'))
   })
   it('any other refusal keeps the server\'s words', async () => {
     answer(403, { error: 'forbidden' })

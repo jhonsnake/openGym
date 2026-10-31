@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../lib/api.js', () => ({ api: vi.fn() }))
+vi.mock('../lib/api.js', async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }))
 // pushState reaches the toast through a lazy import of useUI (which imports this store) — the
 // tests only need to see that it was asked, not a rendered toast.
 const { toast } = vi.hoisted(() => ({ toast: vi.fn() }))

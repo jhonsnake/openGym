@@ -5,6 +5,7 @@ import { MOBILE } from './lib/mobile.js'
 import { useStore } from './store/useStore.js'
 import { startMediaSync } from './lib/media-sync.js'
 import { startNativeKeyboard } from './lib/native-keyboard.js'
+import { managedModeHint } from './lib/managed-bridge.js'
 // The Coach's and the admin dashboard's styles stay in the main stylesheet, in the place they
 // always had (before index.css), although their screens are now loaded on demand (App.jsx).
 import './admin.css'
@@ -28,9 +29,17 @@ createRoot(document.getElementById('root')).render(
   <StrictMode><App /></StrictMode>
 )
 
-// The photos and videos of custom exercises, in every build (the phone and the demo included):
-// uploads of what the server lacks, the local clean-up, and the plan's files kept offline.
-startMediaSync(useStore)
+// The photos and videos of custom exercises stay upstream in M0/native. A web build explicitly
+// marked M1 waits for a verified public mode before it even starts this background producer: its
+// eventual requests still go through the central access guard installed for the signed-in account.
+if (MOBILE || !managedModeHint()) startMediaSync(useStore)
+else {
+  const stop = useStore.subscribe(state => {
+    if (!state.config) return
+    stop()
+    startMediaSync(useStore)
+  })
+}
 
 // Android 15 does not resize the page for the soft keyboard; the app says how much it covers and
 // this keeps the focused field above it. Idle everywhere else.

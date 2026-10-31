@@ -359,6 +359,11 @@ export default function Admin() {
     <div className="adm-intro">
       Everything about running this instance: who uses it, how they get in, the AI Coach, and what has happened on it. Nothing here shows anyone's training data beyond counts.
     </div>
+    <div className="card">
+      <h2 style={{ margin: 0 }}>Operación gestionada</h2>
+      <div className="adm-lead">Roles operativos y ámbito comercial usan una autorización separada del administrador tradicional.</div>
+      <Button size="sm" onClick={() => nav('/admin/operations')}>Abrir operación gestionada</Button>
+    </div>
 
     {usersErr && <div className="card" role="alert" style={{ borderColor: 'var(--red)' }}>
       <div className="row between"><h2 style={{ margin: 0 }}>{users ? 'The last update failed' : 'Could not load the users'}</h2>

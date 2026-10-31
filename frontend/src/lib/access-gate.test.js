@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAccessGate } from './access-gate.js'
 
-const access = ({ account = { id: 'a', activity: 'ACTIVE' }, managedSubscriptions = true, entitlement = { active: true, startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: '2027-01-01T00:00:00.000Z', version: 1 }, capabilities = ['ACCESS_PERSONAL_TRAINING'] } = {}) => {
+const access = ({ account = { id: 'a', activity: 'ACTIVE' }, managedSubscriptions = true, roles = ['CLIENT'], entitlement = { active: true, startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: '2027-01-01T00:00:00.000Z', version: 1 }, capabilities = ['ACCESS_PERSONAL_TRAINING'] } = {}) => {
   const normalizedEntitlement = { version: entitlement.version ?? 1, ...entitlement, ...(entitlement.active === false && (entitlement.startUtc === undefined || entitlement.endExclusiveUtc === undefined) ? { startUtc: null, endExclusiveUtc: null } : {}) }
-  return { account, managedSubscriptions, roles: ['CLIENT'], entitlement: normalizedEntitlement, capabilities, compatibility: { protectedTraining: 'supported' }, requestId: 'r', versionTokens: [] }
+  return { account, managedSubscriptions, roles, entitlement: normalizedEntitlement, capabilities, compatibility: { protectedTraining: 'supported' }, requestId: 'r', versionTokens: [] }
 }
 
 describe('access-gate', () => {
@@ -41,6 +41,20 @@ describe('access-gate', () => {
     expect(gate.getState().status).toBe('blocked')
     await gate.refresh('expired')
     expect(gate.getState()).toMatchObject({ status: 'blocked', reason: 'not-entitled' })
+  })
+
+  it('retains validated operational metadata when personal training is denied', async () => {
+    const gate = createAccessGate({ getAccess: async () => access({
+      roles: ['TRAINER', 'COORDINATOR'],
+      entitlement: { active: false },
+      capabilities: ['CREATE_INVITATION', 'CONFIRM_SUBSCRIPTION'],
+    }) })
+    await gate.refresh('expired')
+    expect(gate.getState()).toMatchObject({ status: 'blocked', reason: 'client-role-required' })
+    expect(gate.getState().access.roles).toEqual(['TRAINER', 'COORDINATOR'])
+    expect(gate.personalCanProceed()).toBe(false)
+    expect(gate.canBackoffice('CREATE_INVITATION')).toBe(true)
+    expect(gate.canBackoffice('CONFIRM_SUBSCRIPTION')).toBe(true)
   })
 
   it('preserves upstream mode 0 while still requiring a valid fresh DTO', async () => {

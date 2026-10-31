@@ -4,6 +4,8 @@
 
 Estado del MVP: NO desplegado. Producción conserva JohnGym y autenticación existente; no se han asignado roles ni suscripciones nominales.
 
+El checkpoint funcional frontend incorpora107 archivos web y pruebas, todos los1236 archivos frontend coincidentes con el snapshot20 aprobado. Revisión del bundle previo y del delta posterior de4 módulos de producción aprobadas; index/Docker coinciden con el bundle revisado y SW coincide con el gate20, con purga adicional inspeccionada. Escaneo de líneas añadidas sin asignaciones de secretos en producción ni atribuciones. La corrección API HISTORY permanece fuera de este commit y requiere sus propios gates; este checkpoint de fuente no declara el MVP listo para desplegar.
+
 ### Hallazgo confirmado y contrato
 
 La clínica real de escritorio y móvil ya completa prescripción, metas, ejecución de dos series con valores reales distintos de los objetivos, persistencia canónica, publicación de peso y lectura por el entrenador. El último bloqueo es HISTORY.
@@ -16,13 +18,13 @@ El contrato aprobado exige congelar al aceptar el cliente, no al confirmar el en
 
 Corrección acotada proc_c431fe437f9b, únicamente API authority-service/training/server/openapi, módulo histórico compartido y pruebas. Brief absoluto: /home/jhonsnake/.hermes/cache/scratch/opengym-mvp/initial-history-consent-fix-brief.txt; resultado/log homónimos; reportes en initial-history-consent-fix/. TDD exigido y revisión independiente posterior. Captura y aceptación atómicas, conjunto seleccionado exacto, replays sin recaptura, pendientes sin acceso funcional, eligibility=acceptedAt y enablement=confirmedAt. Diseño sin migración; si una resulta imprescindible, detener ese cambio y justificarlo. No escritores frontend ni producción. Root API usa inodos independientes del snapshot20 activo.
 
-Full frontend20 proc_26f22fe777a7 sigue siendo el gate pendiente sobre 21308 fuentes completas. Full17 fue ROJO por 184 auxiliares Gitbase omitidos al usar --no-checkout, no por un resultado aceptado del producto: 6612/6613 assertions y5 suites anidadas fallidas en4 archivos, EXIT1. Conservado sin alteraciones. Snapshot20 recupera auxiliares contra identidad de blob Git; los4 archivos antes fallidos pasan101/101 en el snapshot exacto. Todos los archivos frontend de Root coinciden con20; las escrituras API posteriores no alteran ese árbol congelado.
+Full frontend20 TERMINÓ APROBADO: 6705/6705 pruebas, 565 archivos, cero fallos y cero pendientes según JSON, success=true y EXIT0. Coordinador comprobó los21308 SHA256 del snapshot completo: cero cambios. Evidencia durable: /home/jhonsnake/.local/state/opengym-mvp/evidence/history-initial-consent-and-complete-v20/full20-coordinator-verified.json. Este gate incluye el transporte final pero precede a la corrección API de HISTORY; no sustituye su nueva suite API ni la clínica global. Full17 fue ROJO por 184 auxiliares Gitbase omitidos al usar --no-checkout, no por un resultado aceptado del producto: 6612/6613 assertions y5 suites anidadas fallidas en4 archivos, EXIT1. Conservado sin alteraciones. Snapshot20 recupera auxiliares contra identidad de blob Git; los4 archivos antes fallidos pasan101/101 en el snapshot exacto. Todos los archivos frontend de Root coinciden con20; las escrituras API posteriores no alteran ese árbol congelado.
 
 Build compilado19 con medios y managed hints habilitados: EXIT0; ambos hashes inline reales coinciden con Docker CSP. Transporte conserva147 focales aprobados y revisión independiente de los4 archivos de producción aprobada. Son evidencias parciales, no aceptación clínica global ni release final.
 
 ### Evidencia durable y próximos gates
 
-/home/jhonsnake/.local/state/opengym-mvp/evidence/history-initial-consent-and-complete-v20/manifest.json: 7 archivos copiados y comprobados por SHA256, con informe de causa/contrato, control real del coordinador, fallos17, recuperación101, build19 y resumen del snapshot completo.
+/home/jhonsnake/.local/state/opengym-mvp/evidence/history-initial-consent-and-complete-v20/manifest.json: 8 archivos de evidencia comprobados por SHA256, con informe de causa/contrato, control real del coordinador, fallos17, recuperación101, build19 y resumen del snapshot completo.
 
 Siguiente: consumir corrección yfull20; verificar TDD/atomicidad/privacidad; nueva suite API completa, revisión, fuente pública e imagen pinneada; repetir clínica sin cambiar su intención y T9 tras los cambios; construir/validar imagen web final con fuente VCS y todos los medios originales. Restore integral sigue NO aceptado: falta consentimiento específico para el comando privilegiado, sin reintentos ni vías alternativas. Preservar snapshots fallidos, imágenes, medios y trabajos; no reiniciar ni borrar sesión. Guardar este handoff no completa el objetivo.
 

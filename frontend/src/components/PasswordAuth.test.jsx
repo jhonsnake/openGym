@@ -12,7 +12,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
    same proof step adding a passkey uses. The API is a stand-in; what each form sends, and what it
    says back in the UI language, is the point. */
 const mocks = vi.hoisted(() => {
-  const state = { webauthn: true, hasData: false, sheets: [], answers: {}, calls: [] }
+  const state = { webauthn: true, hasData: false, sheets: [], answers: {}, calls: [], config: { password_login: true } }
   state.toast = vi.fn()
   state.setUser = vi.fn()
   state.adoptProfile = vi.fn(async () => ({}))
@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => {
     return a ?? {}
   })
   state.snapshot = () => ({
-    S: {}, config: { password_login: true },
+    S: {}, config: state.config,
     setUser: state.setUser, adoptProfile: state.adoptProfile, pushState: state.pushState, pullState: state.pullState,
   })
   return state
@@ -82,6 +82,7 @@ const click = async (host, text) => { act(() => button(host, text).click()); awa
 beforeEach(() => {
   mocks.webauthn = true
   mocks.hasData = false
+  mocks.config = { password_login: true }
   mocks.sheets.length = 0
   mocks.answers = {}
   mocks.calls.length = 0
@@ -134,6 +135,16 @@ describe('PasswordSignInSheet', () => {
     expect(alertText(host)).toBe('Wrong name, e-mail or password.')
     expect(mocks.setUser).not.toHaveBeenCalled()
     expect(close).not.toHaveBeenCalled()
+  })
+
+  it('does not start legacy profile adoption after a managed password sign-in', async () => {
+    mocks.config = { password_login: true, managed_subscriptions: true }
+    mocks.passwordLogin.mockResolvedValue({ id: 'managed-user', name: 'Ana' })
+    const host = mount(<PasswordSignInSheet close={() => {}} />)
+    type(byPlaceholder(host, 'Name or e-mail'), 'Ana'); type(byPlaceholder(host, 'Password'), 'correct horse battery')
+    await submit(host)
+    expect(mocks.setUser).toHaveBeenCalledWith({ id: 'managed-user', name: 'Ana' }, undefined)
+    expect(mocks.adoptProfile).not.toHaveBeenCalled()
   })
 
   it('redeems a reset code with a new password; a too-short or mistyped one is caught before any request', async () => {
@@ -204,10 +215,10 @@ describe('PasswordSignInSheet', () => {
 })
 
 describe('PasswordRegisterForm', () => {
-  function Harness({ inviteOnly }) {
+  function Harness({ inviteOnly, inviteToken, onInvitationRegistered, close = () => {} }) {
     const [name, setName] = React.useState('')
     const [code, setCode] = React.useState('')
-    return <PasswordRegisterForm close={() => {}} inviteOnly={inviteOnly} name={name} setName={setName} code={code} setCode={setCode} />
+    return <PasswordRegisterForm close={close} inviteOnly={inviteOnly} inviteToken={inviteToken} onInvitationRegistered={onInvitationRegistered} name={name} setName={setName} code={code} setCode={setCode} />
   }
   it('checks the invite and the repeated password here, then creates the profile', async () => {
     mocks.passwordRegister.mockResolvedValue({ id: 'u9', name: 'Cleo' })
@@ -261,6 +272,41 @@ describe('PasswordRegisterForm', () => {
     type(byPlaceholder(host, 'Repeat the password'), 'correct horse battery')
     await submit(host)
     expect(alertText(host)).toBe('Another profile already signs in with this name.')
+  })
+
+  it('uses the exact managed invitation token instead of a legacy code and returns to explicit consent without legacy sync', async () => {
+    const inviteToken = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde'
+    expect(inviteToken).toHaveLength(43)
+    const close = vi.fn()
+    const registered = vi.fn()
+    mocks.config = { password_login: true, managed_subscriptions: true, invite_only: true }
+    mocks.passwordRegister.mockResolvedValue({ id: 'managed-account', name: 'Cleo' })
+    const host = mount(<Harness inviteOnly inviteToken={inviteToken} close={close} onInvitationRegistered={registered} />)
+    expect(byPlaceholder(host, 'Invite code')).toBeNull()
+    type(byPlaceholder(host, 'Your name'), 'Cleo')
+    type(byPlaceholder(host, 'Password'), 'correct horse battery')
+    type(byPlaceholder(host, 'Repeat the password'), 'correct horse battery')
+    await submit(host)
+    expect(mocks.passwordRegister).toHaveBeenCalledWith('Cleo', 'correct horse battery', '', '', inviteToken)
+    expect(mocks.setUser).toHaveBeenCalledWith({ id: 'managed-account', name: 'Cleo' })
+    expect(close).toHaveBeenCalled()
+    expect(registered).toHaveBeenCalled()
+    expect(mocks.pullState).not.toHaveBeenCalled()
+    expect(mocks.pushState).not.toHaveBeenCalled()
+    expect(mocks.toast).toHaveBeenCalledWith('Your password was created. Your operational role, trainer confirmation, and renewal status remain pending.')
+  })
+
+  it('does not let a blank or malformed invitation token bypass a legacy invite-only code', async () => {
+    for (const inviteToken of ['', 'not-a-managed-token']) {
+      const host = mount(<Harness inviteOnly inviteToken={inviteToken} />)
+      expect(byPlaceholder(host, 'Invite code')).not.toBeNull()
+      type(byPlaceholder(host, 'Your name'), 'Cleo')
+      type(byPlaceholder(host, 'Password'), 'correct horse battery')
+      type(byPlaceholder(host, 'Repeat the password'), 'correct horse battery')
+      await submit(host)
+      expect(alertText(host)).toBe('An invite code is required')
+    }
+    expect(mocks.passwordRegister).not.toHaveBeenCalled()
   })
 })
 

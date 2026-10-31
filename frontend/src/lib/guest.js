@@ -10,6 +10,9 @@
  * Older servers predate the flag and send no `allow_guest` at all; they mean "allowed".
  *
  * @param {{allow_guest?: boolean}|null|undefined} config Parsed /api/config body, or null.
+ * @param {{managedHint?: boolean}} options Compile-time M1 marker; denial-only when config failed.
  * @returns {boolean} true when the guest entrance may be shown and used.
  */
-export const guestAllowed = config => !(config && config.allow_guest === false)
+export const guestAllowed = (config, { managedHint = false } = {}) => config
+  ? config.allow_guest !== false
+  : !managedHint

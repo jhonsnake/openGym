@@ -115,6 +115,14 @@ self.addEventListener('activate', e => {
   })())
 })
 
+// M1's page-level authority bridge asks us to drop the shell on logout, account switch or a
+// protected denial.  /api/ is never cached below; this additionally removes lazy private-view
+// chunks.  The message is emitted only by the managed web bridge, preserving M0/offline/native.
+self.addEventListener('message', e => {
+  if (e.data?.type !== 'PURGE_MANAGED_PRIVATE_CACHE') return
+  e.waitUntil?.(caches.delete(CACHE))
+})
+
 // Only a real answer is kept. A gated instance answers a lapsed session with 401, and an auth
 // proxy in front with its login page, a 200 of HTML after a redirect; stored under an image's
 // URL, that would stand in for the animation for good, since nothing sweeps this cache.

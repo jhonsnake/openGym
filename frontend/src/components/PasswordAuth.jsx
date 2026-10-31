@@ -14,6 +14,7 @@ import { t } from '../lib/i18n.js'
 import { dateLocale } from '../lib/i18n-core.js'
 import { api, webauthnOK, passkeyAssertion, passwordLogin, passwordRegister, passwordResetRedeem } from '../lib/api.js'
 import { askAddDeviceData } from '../sheets.jsx'
+import { managedModeHint } from '../lib/managed-bridge.js'
 import { Row, Button } from './ui.jsx'
 
 // The server's floor (api/password.js MIN_LENGTH), checked here first so the common mistake is
@@ -73,14 +74,16 @@ const dismissed = e => e?.name === 'NotAllowedError' || e?.name === 'AbortError'
 // merges what this device kept for it (adoptProfile).
 async function signedIn(u, close) {
   const st = useStore.getState()
-  st.setUser(u, { adopt: true })
+  const managed = st.config?.managed_subscriptions === true || managedModeHint()
+  st.setUser(u, managed ? undefined : { adopt: true })
   close()
-  await st.adoptProfile(askAddDeviceData)
+  if (!managed) await st.adoptProfile(askAddDeviceData)
   toast(t('Welcome back, {0}', u.name))
 }
 
 const field = { autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false }
 const codeStyle = { letterSpacing: '.14em', fontWeight: 600, textAlign: 'center' }
+const managedInvitationToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value)
 
 /* Sign in with name (or the profile's sign-in e-mail) and password, or — one tap away — redeem a reset code from the admin, which
    sets a new password and signs in. `onPasskey`, when given, offers the passkey instead. The
@@ -154,12 +157,13 @@ export const openPasswordSignIn = onPasskey => ui().openSheet(close => <Password
 
 /* The password half of creating a profile. Name and invite code are the caller's state, so
    switching between passkey and password on the sign-up sheet keeps what was typed. */
-export function PasswordRegisterForm({ close, inviteOnly, name, setName, code, setCode }) {
+export function PasswordRegisterForm({ close, inviteOnly, inviteToken, onInvitationRegistered, name, setName, code, setCode }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
   const [again, setAgain] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  const managedInvitation = managedInvitationToken(inviteToken)
   const submit = async ev => {
     ev.preventDefault()
     if (busy) return
@@ -167,16 +171,23 @@ export function PasswordRegisterForm({ close, inviteOnly, name, setName, code, s
     const mail = email.trim()
     const bad = !n ? t('Enter a name')
       : mail && !looksLikeEmail(mail) ? t('That is not an e-mail address.')
-      : inviteOnly && !code.trim() ? t('An invite code is required')
+      : inviteOnly && !managedInvitation && !code.trim() ? t('An invite code is required')
       : length(pw) < MIN_PASSWORD ? t('Use at least {0} characters.', MIN_PASSWORD)
       : pw !== again ? t('The two passwords are not the same.')
       : null
     if (bad) { setErr(bad); return }
     setBusy(true); setErr(null)
     try {
-      const u = await passwordRegister(n, pw, code.trim(), mail)
+      const u = managedInvitation
+        ? await passwordRegister(n, pw, '', mail, inviteToken)
+        : await passwordRegister(n, pw, code.trim(), mail)
       const st = useStore.getState()
       st.setUser(u); close()
+      if (managedInvitation) {
+        onInvitationRegistered?.()
+        toast(t('Your password was created. Your operational role, trainer confirmation, and renewal status remain pending.'))
+        return
+      }
       if (hasData(useStore.getState().S)) { await st.pushState(); toast(t('Profile created, and this device’s data moved into it')) }
       else { await st.pullState(); toast(t('Welcome, {0}', u.name)) }
     } catch (e) { setErr(passwordError(e)) }
@@ -189,12 +200,13 @@ export function PasswordRegisterForm({ close, inviteOnly, name, setName, code, s
     <input className="input" type="email" name="email" autoComplete="email" inputMode="email" placeholder={t('E-mail (optional)')} maxLength={254}
       value={email} onChange={e => setEmail(e.target.value)} {...field} />
     <div className="dim small" style={{ marginTop: 6 }}>{t('Lets you sign in with it instead of your name. Nothing is ever sent to it.')}</div>
-    {inviteOnly && <>
+    {inviteOnly && !managedInvitation && <>
       <div style={{ height: 10 }} />
       <input className="input" placeholder={t('Invite code')} maxLength={40} value={code}
         onChange={e => setCode(e.target.value.toUpperCase())} style={codeStyle} />
       <div className="dim small" style={{ marginTop: 6 }}>{t('This app is invite-only. Enter the code you were given.')}</div>
     </>}
+    {managedInvitation && <div className="dim small" style={{ marginTop: 10 }}>{t('This managed invitation securely replaces the traditional invite code. You will return to the invitation steps after creating your profile.')}</div>}
     <div style={{ height: 10 }} />
     <input className="input" type="password" name="new-password" autoComplete="new-password" placeholder={t('Password')}
       value={pw} onChange={e => setPw(e.target.value)} />

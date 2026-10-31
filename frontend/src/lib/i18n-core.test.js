@@ -1,10 +1,41 @@
 import { describe, it, expect } from 'vitest'
+import { VISIBLE_BRAND_SOURCE_KEYS } from './visible-brand-source-keys.js'
 import {
   LANGS, INSTR_LANGS, EXERCISE_NAME_LANGS, DATE_LOCALES, DERIVED_LOCALES,
   baseLang, derivePack, dateLocale, getLang, t, _setLangState, exerciseNameClass, exerciseNameFor, CASED_NAME_LANGS, RTL_LANGS
 } from './i18n-core.js'
 import { EXDB } from './exercises-data.js'
 import de from '../locales/de.js'
+
+describe('visible product branding', () => {
+  it('rebrands resolved text before interpolation without touching user values or technical paths', () => {
+    const source = 'This server only takes changes made at {0}. If you opened openGym at another address, whoever runs the server can set ORIGIN and RP_ID to match it (the self-hosting guide shows how).'
+    _setLangState('en', {}, null, null)
+    expect(t(source, 'https://openGym.example')).toBe('This server only takes changes made at https://openGym.example. If you opened JohnGym at another address, whoever runs the server can set ORIGIN and RP_ID to match it (the self-hosting guide shows how).')
+    const backup = 'Saves a dated copy to Documents/openGym after finishing a workout or editing a routine, and keeps the newest {0}. Point a sync app at that folder, or copy it out by hand.'
+    expect(t(backup, 14)).toBe('Saves a dated copy to Documents/openGym after finishing a workout or editing a routine, and keeps the newest 14. Point a sync app at that folder, or copy it out by hand.')
+    expect(t('my openGym routine')).toBe('my openGym routine')
+    expect(VISIBLE_BRAND_SOURCE_KEYS).toContain(source)
+  })
+
+  it('brands a resolved locale form after plural selection', () => {
+    _setLangState('es', { 'Support openGym': { one: 'openGym notice', other: 'openGym notices' } }, null, null)
+    expect(t('Support openGym', 2)).toBe('JohnGym notices')
+    _setLangState('en', {}, null, null)
+  })
+
+  it('uses the English article before interpolation without rewriting native or translated copy', () => {
+    const source = 'That file isn’t an openGym backup.'
+    _setLangState('en', {}, null, null)
+    expect(t(source)).toBe('That file isn’t a JohnGym backup.')
+    expect(t(source)).not.toContain('an JohnGym')
+
+    _setLangState('de', { [source]: 'Das ist an JohnGym backup für {0}.' }, null, null)
+    expect(t(source, 'an openGym user')).toBe('Das ist an JohnGym backup für an openGym user.')
+    expect(t('native an openGym value')).toBe('native an openGym value')
+    _setLangState('en', {}, null, null)
+  })
+})
 
 describe('baseLang', () => {
   it('maps a derived locale to the language whose packs it loads', () => {
