@@ -68,7 +68,7 @@ const maybeRestNotification = async () => {
     // first instead of stacking a second banner. No body — it only repeated the title.
     // Android Chrome forbids the Notification constructor (Illegal constructor) - the
     // service-worker registration path is the one that actually pops there.
-    const opts = { tag: 'rest-timer', icon: 'icon-512.png' }
+    const opts = { tag: 'rest-timer', icon: 'johngym-v1-512.png' }
     // iOS ignores the tag replacement (issue #172): close the previous one by hand, as the
     // worker does on a push, or the end of a rest leaves two banners stacked there.
     try { for (const n of (await reg?.getNotifications?.({ tag: 'rest-timer' })) || []) n.close() } catch { /* no getNotifications: the tag is all there is */ }

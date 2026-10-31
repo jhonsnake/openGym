@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { imgSrc, gifSrc, isVideoSrc, isCustomEx, figureOf } from '../lib/exercises.js'
+import { imgSrc, gifSrc, isVideoSrc, isCustomEx, figureOf, BUILTIN_EXERCISE_MEDIA } from '../lib/exercises.js'
 import { MOBILE } from '../lib/mobile.js'
 import { useStore } from '../store/useStore.js'
 import { t, exerciseNameFor } from '../lib/i18n.js'
@@ -22,6 +22,7 @@ export default function Media(p) {
 // (gifSize 'off') — then nothing renders here and the exercise card closes up, exactly like
 // an exercise without media. Any other/legacy value behaves as 'full'.
 function BuiltinMedia({ ex, id, compact, minimizable }) {
+  if (!BUILTIN_EXERCISE_MEDIA) return null
   const [playing, setPlaying] = useState(true)
   // 'gif' → the animation failed, the still is showing; 'all' → the still failed too. Media is
   // fetched from wherever the build points (a mount, a CDN): a dropped connection, an expired
@@ -170,6 +171,7 @@ export function Thumb(p) {
   return isCustomEx(p.ex) ? <CustomThumb {...p} /> : <BuiltinThumb {...p} />
 }
 function BuiltinThumb({ ex }) {
+  if (!BUILTIN_EXERCISE_MEDIA) return null
   const body = useStore(s => figureOf(s.S))
   const src = ex.img ? imgSrc(ex, body) : null
   const [broken, setBroken] = useState(null)

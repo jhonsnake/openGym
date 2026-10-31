@@ -97,12 +97,17 @@ const resolveTheme = theme => theme === 'light' || theme === 'dark'
   ? theme
   : (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 
-function applyPrefs(theme, accent) {
+export function applyPrefs(theme, accent) {
   const de = document.documentElement
   de.dataset.theme = resolveTheme(theme)
-  applyAccent(de, accent, de.dataset.theme)
+  // Preserve native preferences; the scoped web stylesheet supplies its fixed brand accent.
+  if (MOBILE) applyAccent(de, accent, de.dataset.theme)
+  else {
+    delete de.dataset.accent
+    for (const key of ['--acc', '--acc-2', '--on-acc', '--acc-soft', '--acc-line']) de.style.removeProperty(key)
+  }
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.content = de.dataset.theme === 'light' ? '#f2f2f7' : '#000000'
+  if (meta) meta.content = de.dataset.theme === 'light' ? '#ffffff' : '#07003c'
   if (MOBILE) setSystemBarsLight(de.dataset.theme === 'light')
 }
 
@@ -142,9 +147,8 @@ function Shell() {
     navigate('/workout', { replace: true })
     exitWorkoutEdit(() => navigate(destination, { replace: true }))
   }, [loc.pathname, loc.search, S.active?.editingWorkoutId, navigate])
-  // A preset key, or the user's own colour as '#rrggbb' (lib/accent.js), already checked. A
-  // seasonal theme's colours stand in for it while that theme shows, and only when chosen
-  // (Settings → Look & Home → Seasonal themes); the saved accent itself is never touched.
+  // Seasonal colours may temporarily replace an accent in native clients. Web keeps its
+  // approved palette without mutating either saved preference.
   const accent = seasonAccent(S) || accentValue(S)
   useEffect(() => { applyPrefs(S.theme, accent) }, [S.theme, accent])
   // 'system' needs to react live if the OS theme flips while the app is open, not just on

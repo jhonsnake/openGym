@@ -448,7 +448,7 @@ export default function Settings({ page = null, find = null, via = null, entryKe
     plan: () => (mode === 'rotation' ? t('Rotation') : t('Fixed Week')) + ' · ' + shortWeekday(weekStartOf(S) === SUNDAY ? 0 : 1),
     units: () => (S.unit || 'kg') + ' · ' + (LANGS[lang] || lang),
     equipment: () => (S.equipFilterOn && activeProfile ? activeProfile.name : ownsNoDumbbells(S) ? t('Everything but dumbbells') : t('Everything')),
-    look: () => themeLabel + ' · ' + accentLabel(S),
+    look: () => themeLabel + ' · ' + (MOBILE ? accentLabel(S) : 'JohnGym'),
     coach: () => (coachLocal?.mode === 'server' ? t('Your server') : coachLocal?.mode === 'byok' ? t('Your API key') : t('Off')),
     data: () => '',
     about: () => 'v' + __APP_VERSION__,
@@ -822,12 +822,12 @@ export default function Settings({ page = null, find = null, via = null, entryKe
             onChange={v => update(s => { s.theme = v })}
           />
         </Row>
-        <div className="lrow" style={{ flexWrap: 'wrap', rowGap: 12, paddingBottom: 14 }}>
+        {MOBILE && <div className="lrow" style={{ flexWrap: 'wrap', rowGap: 12, paddingBottom: 14 }}>
           <span className="lrow-i" style={{ '--tint': 'var(--purple)' }}><Icon name="palette" /></span>
           <span className="lrow-m"><span className="lrow-t">{t('Accent color')}</span></span>
           <span className="lrow-v">{accentLabel(S)}</span>
           <AccentSwatches S={S} update={update} />
-        </div>
+        </div>}
         {/* The home-screen icon: the phone's own, not synced. iPhone only in 1.4.3 (Android follows). */}
         {MOBILE && platformNow() === 'ios' && <AppIconRow />}
         {/* How the muscle map is drawn. The exercise drawings follow it until they are set below. */}
@@ -893,7 +893,7 @@ export default function Settings({ page = null, find = null, via = null, entryKe
               options={[{ value: 'auto', label: t('Auto') }, { value: 'on', label: t('On') }, { value: 'off', label: t('Off') }]}
               value={choice} onChange={v => set(th.id, v)} />
           </Row>
-          {th.colors && <Row icon="palette" iconTint="var(--purple)" title={t(th.colorsTitle)} subtitle={t(th.colorsNote)}>
+          {MOBILE && th.colors && <Row icon="palette" iconTint="var(--purple)" title={t(th.colorsTitle)} subtitle={t(th.colorsNote)}>
             <Switch aria-label={t(th.colorsTitle)} checked={S.seasonal?.[th.id + 'Colors'] === true}
               onChange={v => set(th.id + 'Colors', v)} />
           </Row>}
@@ -991,8 +991,8 @@ export default function Settings({ page = null, find = null, via = null, entryKe
           build there is no address bar and no about box, so without this there is no way to tell
           which build you are running, or whether an update actually installed. */}
       <div className="dim small sp-version">
-        openGym v{__APP_VERSION__} · {t('free & open source (AGPL v3)')}<br />
-        <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">{t('Source code')}</a><br />
+        JohnGym v{__APP_VERSION__} · {t('free & open source (AGPL v3)')}<br />
+        <a href={REPO} target="_blank" rel="noopener">{t('Source code')}</a><br />
         {/* Attribution the media licence asks for word for word (agreement §8c), so it is not translated */}
         Exercise media © Aliaksandr Makatserchyk, <a href="https://gymvisual.com/" target="_blank" rel="noopener">Gym visual</a>, gymvisual.com.
         Media licensed for use in openGym only; see <a href="https://github.com/DuarteSantos8/openGym/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>
@@ -1143,7 +1143,7 @@ function SettingsRoot({ ctx, preview, open, user, sync, home, go, entryKey }) {
             value={t('Admin')} accessory="chevron" onClick={() => nav('/admin', { state: { section: 'coach' } })} className="sp-root-row" />}
         </Section>
       ))}
-      <div className="dim small sp-version">openGym v{__APP_VERSION__}</div>
+      <div className="dim small sp-version">JohnGym v{__APP_VERSION__}</div>
     </>}
   </div>
 }
@@ -1390,16 +1390,6 @@ function accentLabel(S) {
   return k === CUSTOM ? t('Your own color') : t(ACCENT_NAMES[k] || 'Green')
 }
 
-/**
- * The presets, then one swatch for a colour of the user's own (lib/accent.js). With no colour
- * of their own yet it is a rainbow ring, and a tap opens the system colour picker straight away.
- * Once there is one it is filled with it: a tap picks it again (it is kept while a preset is
- * chosen), and a tap on it while it is the accent opens the picker to change it. The picker is
- * the native <input type="color"> laid over the swatch, so the tap that opens it is the user's
- * own, which iOS Safari and the Android WebView both want.
- */
-// How long the colour picker has to rest before a colour is saved, when the browser sends no
-// `change` at the end (it should, once the picker closes).
 const OWN_COLOR_SETTLE_MS = 400
 
 function AccentSwatches({ S, update }) {
@@ -1413,9 +1403,6 @@ function AccentSwatches({ S, update }) {
     update(s => { s.accent = CUSTOM; s.accentCustom = c })
     setRestAccent(c)
   }
-  // The picker sends a colour for every step of a drag (React's onChange is the `input` event).
-  // Those only repaint the page; the colour is saved, synced and sent to the native countdown
-  // once: on the picker's `change`, after it has rested a moment, or when Settings closes.
   const inputRef = useRef(null)
   const pending = useRef(null)
   const timer = useRef(0)
@@ -1430,8 +1417,7 @@ function AccentSwatches({ S, update }) {
   const preview = hex => {
     const c = cleanHex(hex)
     if (!c) return
-    const de = document.documentElement
-    applyAccent(de, c, de.dataset.theme)
+    applyAccent(document.documentElement, c, document.documentElement.dataset.theme)
     pending.current = c
     clearTimeout(timer.current)
     timer.current = setTimeout(commit, OWN_COLOR_SETTLE_MS)
@@ -1445,8 +1431,6 @@ function AccentSwatches({ S, update }) {
     return () => el.removeEventListener('change', onChange)
   }, [hasInput]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => commit, []) // eslint-disable-line react-hooks/exhaustive-deps
-  // The input is not controlled (React would put the saved colour back after every drag step);
-  // a colour changed elsewhere (sync, another tab) is put in by hand.
   useEffect(() => {
     if (!pending.current && inputRef.current) inputRef.current.value = own || '#30d158'
   }, [own])
@@ -1466,9 +1450,7 @@ function AccentSwatches({ S, update }) {
         ? <button className="swatch swatch-own" style={{ background: own }} onClick={() => pickOwn(own)} aria-label={ownLabel} />
         : <span className={'swatch swatch-own' + (own ? ' on' : ' unset')} style={own ? { background: own, color: inkOn(own) } : undefined}>
           {own ? <Icon name="pencil" /> : <Icon name="plus" />}
-          <input ref={inputRef} type="color" className="swatch-input" defaultValue={own || '#30d158'}
-            onChange={e => preview(e.target.value)}
-            aria-label={own ? t('Change your own color') : t('Pick your own color')} />
+          <input ref={inputRef} type="color" className="swatch-input" defaultValue={own || '#30d158'} onChange={e => preview(e.target.value)} aria-label={own ? t('Change your own color') : t('Pick your own color')} />
         </span>}
     </div>
     {notes.map(n => <span key={n} className="lrow-s swatch-note" style={{ flexBasis: '100%', paddingInlineStart: 41 }}>{n}</span>)}

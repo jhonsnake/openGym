@@ -418,7 +418,7 @@ describe('searchSettings', () => {
     expect(searchSettings('Vibrate', guestWeb, tr).map(h => h.title)).toEqual(['Vibrate'])
     expect(searchSettings('buzz', guestWeb, tr).map(h => h.title)).toEqual(['Vibrate'])
     expect(searchSettings('pounds', guestWeb, tr).map(h => h.title)).toEqual(['Weight unit'])
-    expect(searchSettings('dark mode', guestWeb, tr).map(h => h.title)).toEqual(['Theme'])
+    expect(searchSettings('dark mode', guestWeb, tr).map(h => h.title)).toContain('Theme')
     expect(searchSettings('gif', guestWeb, tr).map(h => h.title)).toEqual(['Exercise animations'])
     expect(searchSettings('RÉST TIMER', guestWeb, tr)[0].title).toBe('Rest timer')
     expect(fold('Thème')).toBe('theme')

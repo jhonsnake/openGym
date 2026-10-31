@@ -38,6 +38,14 @@ Preservar cuentas/passkeys y datos, dominio/RP_ID/ORIGIN y otros servicios. No r
 Evidencia activa y briefs: /home/jhonsnake/.hermes/cache/scratch/opengym-mvp/. Copia privada duradera de evidencia cerrada: /home/jhonsnake/.local/state/opengym-mvp/. Handoff canónico: /home/jhonsnake/hermes-stack/services/opengym/HANDOFF.md. Releerlo tras compactación, conservar compactación nativa/sesión/trabajos. Los informes no sustituyen pruebas coordinadas. Sólo coordinación integra, publica commits/push y verifica remoto; nadie más tiene permiso de producción.
 
 
+## Corte JohnGym de frontend verificado y listo para publicar fuente
+
+Identidad JohnGym/paleta web scoped, iconos versionados, picker nativo y SW integrados sin cherry-pick. Revisión independiente SOURCE ONLY: passed=true, sin problemas de seguridad/lógica; johngym-source-review.md. Coordinador verificó suite completa frontend:6573PASS/0FAIL, exit0; build verificado; los2E2E descubiertos desktop/móvil:2PASS. Estos E2E son guest/preferencias con API no disponible, NO T9 de autenticación/servicio. El gate de filesystem de imagen web sigue pendiente. Fuente de este componente puede publicarse sin incluir API/opsWIP y sin desplegar.
+
+T5 se integró por3vías con schema3 y fue revisado; NO aceptado: dos P1 (HISTORY multirrango/errores internos y customEx no conectado) y un P2 OpenAPI, más endurecimiento de cursores/tokens. FullAPI más reciente:774PASS/1FAIL/1SKIP, exit1; el fallo es una aserción de log cross-origin que recibió undefined; la causa aún requiere confirmación y no se da por corregida; skip heredado por ventana de medianoche. Fixture de fecha UTC/Panamá de T5 ya reproducida y corregida sólo en test:6PASS. Ningún fullAPI actual se declara verde.
+
+PrimerUI de administración existe sólo en worktree aislado;30PASS coordinados, editor scopes siguiente corte34PASS reportados. No se integra por copia completa ni se confunde con shell/sync/invitaciones/entrenamiento/T9 terminados. T6/T7, imagen final, restore integral, targets nominales y despliegue siguen pendientes. Producción JohnGym no fue modificada por este corte.
+
 ## Corte de catálogo de autoridad verificado
 
 Componente T5 de IDs reconocido probado independientemente: manifiesto literal desde EXDB+EXALIAS, generador determinista conectado al build, resolver sin prefijo permisivo ni runtime Vite, callback de custom sólo servidor. Coordinador ejecutó4 pruebas del catálogo y2 de empaquetado, todas PASS. El JSON contiene sólo IDs, no medios restringidos ni perfiles. Se publica este componente por separado; no completa dominio T5 ni cambia producción. El resto del WIP API/branding/ops no se incluye en ese commit.

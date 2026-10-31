@@ -22,8 +22,11 @@ const rule = (css, sel) => {
 }
 const token = (decls, name) => decls.match(new RegExp(`${name}:\\s*([^;}]+)`))?.[1]?.trim()
 
-const hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map((c) => c + c).join(''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) }
-const rgba = (v) => { const m = v.match(/rgba\(([^)]+)\)/); const p = m[1].split(',').map(Number); return { rgb: p.slice(0, 3), a: p[3] } }
+const hex = (h) => { h = h.replace(/!important/g, '').trim().replace('#', ''); if (h.length === 3) h = [...h].map((c) => c + c).join(''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) }
+const rgba = (v) => {
+  if (v.startsWith('#')) return { rgb: hex(v), a: 1 }
+  const m = v.match(/rgba\(([^)]+)\)/); const p = m[1].split(',').map(Number); return { rgb: p.slice(0, 3), a: p[3] }
+}
 const lum = (rgb) => { const l = rgb.map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }); return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2] }
 const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
 const over = ({ rgb, a }, bg) => rgb.map((c, i) => c * a + bg[i] * (1 - a))
@@ -58,6 +61,24 @@ describe('Increase Contrast (#707)', () => {
       const light = hex(token(rule(hc, ':root[data-theme="light"]'), `--${colour}`))
       expect(ratio(hex(darkInk || ink), dark), `${name} dark`).toBeGreaterThanOrEqual(4.5)
       expect(ratio(hex(lightInks[name] || ink), light), `${name} light`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('JohnGym web Increase Contrast keeps its scoped hairline at 3:1 and its fixed accent label at 4.5:1', () => {
+    const web = read('branding.css')
+    const webMore = block(web, /@media\s*\(prefers-contrast:\s*more\)/)
+    const webThemes = [
+      ['dark', rule(web, ':root[data-web-branding="true"]'), rule(webMore, ':root[data-web-branding="true"]')],
+      ['light', rule(web, ':root[data-web-branding="true"][data-theme="light"]'), rule(webMore, ':root[data-web-branding="true"][data-theme="light"]')],
+    ]
+    for (const [name, base, more] of webThemes) {
+      const card = hex(token(base, '--surface'))
+      const label2 = token(more, '--label-2') || token(base, '--label-2')
+      expect(ratio(over(rgba(label2), card), card), `${name} label`).toBeGreaterThanOrEqual(4.5)
+      expect(ratio(over(rgba(token(more, '--sep')), card), card), `${name} hairline`).toBeGreaterThanOrEqual(3)
+      const accent = token(base, '--acc')
+      expect(accent).toMatch(/^#[0-9a-f]{6}$/i)
+      expect(ratio(hex(token(base, '--on-acc')), hex(accent)), `${name} accent`).toBeGreaterThanOrEqual(4.5)
     }
   })
 })

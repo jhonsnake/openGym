@@ -23,4 +23,17 @@ describe('gifSrc and VITE_CLIP_EXT', () => {
     // a fork's GIF stays a GIF
     expect(gifSrc({ ...ex, gif: '0025.gif', fv: undefined }, 'male')).toBe('exercise-media/clip/0025.gif')
   })
+
+  it('does not expose built-in media when the commercial build disables it', async () => {
+    vi.stubEnv('VITE_BUILTIN_EXERCISE_MEDIA', '0')
+    const { gifSrc, imgSrc } = await import('./exercises.js')
+    expect(gifSrc(ex, 'male')).toBeNull()
+    expect(imgSrc(ex, 'female')).toBeNull()
+  })
+
+  it('keeps built-in media enabled when the flag is unset', async () => {
+    const { gifSrc, imgSrc } = await import('./exercises.js')
+    expect(gifSrc(ex, 'male')).toBe('exercise-media/clip/0025.mp4')
+    expect(imgSrc(ex, 'male')).toBe('exercise-media/still/0025.webp')
+  })
 })

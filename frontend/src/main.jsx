@@ -10,7 +10,12 @@ import { startNativeKeyboard } from './lib/native-keyboard.js'
 import './admin.css'
 import './coach.css'
 import './index.css'
+import './branding.css'
 import { hideBoot, handOverFromLaunchScreen } from './lib/boot.js'
+
+// The web shell receives the commercial palette before React renders. Native clients keep
+// their existing theme, accent and seasonal controls because they never receive this marker.
+if (!MOBILE) document.documentElement.dataset.webBranding = 'true'
 
 // App.jsx restores per-route scroll itself; the browser's own attempt races it.
 // A script that dies before the app draws would otherwise leave the boot logo lifting forever.

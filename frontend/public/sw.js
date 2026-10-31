@@ -4,7 +4,7 @@
    itself lives in localStorage. `CACHE` carries the build hash (vite.config.js rewrites it), so
    every deploy is a new worker with its own cache and the previous build's files are dropped on
    activate; the media cache (`MEDIA`) is kept across builds. */
-const CACHE = 'opengym-rt-__BUILD__'
+const CACHE = 'johngym-shell-__BUILD__'
 // Where the page leaves this browser's push device id (lib/push.js shareDeviceId) for the
 // pushsubscriptionchange handler below, which has no localStorage to read it from. Not a build
 // cache, so activate's sweep leaves it alone.
@@ -100,11 +100,15 @@ self.addEventListener('activate', e => {
     if (await c.match('index.html')) {
       // DEVICE_CACHE holds this browser's device id (the push re-register below needs it): not a
       // build, so an update never sweeps it.
-      const old = (await caches.keys()).filter(k => k !== CACHE && k !== MEDIA && k !== DEVICE_CACHE)
+      const old = (await caches.keys()).filter(k => k !== CACHE && /^(?:opengym-rt-|johngym-shell-)/.test(k))
       // A build from before MEDIA existed kept its media in its own cache: move it across first,
       // so the first update to this worker does not cost what the device already had offline.
-      await Promise.all(old.map(k => adoptMedia(k).catch(() => {})))
-      await Promise.all(old.map(k => caches.delete(k)))
+      await Promise.all(old.map(async k => {
+        try {
+          await adoptMedia(k)
+          await caches.delete(k)
+        } catch { /* Keep the old offline copy if migration fails (for example, quota). */ }
+      }))
       await trimMedia().catch(() => {})
     }
     await self.clients.claim()
@@ -211,10 +215,10 @@ self.addEventListener('push', e => {
     // the previous notification with the same tag is closed by hand first.
     const tag = data.tag || 'opengym'
     try { for (const n of await self.registration.getNotifications({ tag })) n.close() } catch {}
-    await self.registration.showNotification(data.title || 'openGym', {
+    await self.registration.showNotification(data.title || 'JohnGym', {
       body: data.body || '',
-      icon: 'icon-512.png',
-      badge: 'icon-180.png',
+      icon: 'johngym-v1-512.png',
+      badge: 'johngym-v1-180.png',
       tag,
       renotify: true
     })

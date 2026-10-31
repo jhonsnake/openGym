@@ -1,15 +1,15 @@
 {
-  "name": "openGym",
-  "short_name": "openGym",
+  "name": "JohnGym",
+  "short_name": "JohnGym",
   "description": "Personal gym & body weight tracker",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0c0e12",
-  "theme_color": "#0c0e12",
+  "background_color": "#07003c",
+  "theme_color": "#07003c",
   "icons": [
-    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "johngym-v1-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "johngym-v1-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

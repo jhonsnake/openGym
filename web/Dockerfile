@@ -24,6 +24,8 @@ COPY frontend/ ./
 # image built between two releases calls itself the same thing, and "which build are you running?"
 # cannot be answered from the phone. Unset, the app reports package.json's version as before.
 ARG APP_BUILD=""
+# The managed commercial MVP ships no Gym Visual assets and must not request them.
+ENV VITE_BUILTIN_EXERCISE_MEDIA=0
 RUN APP_BUILD="$APP_BUILD" npm run build
 
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine
@@ -61,7 +63,7 @@ ARG BUILD_DATE=unknown
 LABEL maintainer="Duarte Santos https://github.com/DuarteSantos8" \
     org.opencontainers.image.title="opengym-web" \
     org.opencontainers.image.description="Frontend for Self-hosted gym & body-weight tracker — plan routines, log workouts (supersets & cardio too), track your weight and progress, passkey login. Your data, your server." \
-    org.opencontainers.image.source="https://github.com/DuarteSantos8/openGym" \
+    org.opencontainers.image.source="https://github.com/jhonsnake/openGym" \
     org.opencontainers.image.url="https://opengym.ch" \
     org.opencontainers.image.documentation="https://github.com/DuarteSantos8/openGym#readme" \
     org.opencontainers.image.licenses="AGPL-3.0-or-later" \
@@ -75,9 +77,10 @@ COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
 # before the template rendering at 20.
 COPY --chmod=755 web/05-check-base-path.sh /docker-entrypoint.d/
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
-# The exercise stills and animations, 180 px, licensed from Gym visual for openGym only: see
-# catalogue/media/NOTICE.md. They ship inside the image; nothing is downloaded at start-up.
-COPY catalogue/media/ /usr/share/nginx/html/exercise-media/
+# Restricted Gym Visual stills/clips are deliberately excluded from this commercial
+# image. The catalogue text and MIT-compatible body diagrams remain available.
+# Keep the third-party notices alongside the application, not as exercise media.
+COPY NOTICE.md LICENSE /usr/share/nginx/html/legal/
 
 # Set Default ENVs for nginx
 ENV NGINX_PORT=80
