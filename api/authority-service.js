@@ -629,7 +629,8 @@ export function createAuthorityService({ store, identity, historyPublisher, isAd
   function revokeIndefiniteClientOffline({ ownerId, operationId, reason, requestId = 'offline-indefinite-client-revoke' }) {
     uuid(operationId, 'operationId');
     if (typeof reason !== 'string' || reason.length < 1 || reason.length > 280) fail('invalid reason');
-    if (!identity.get(ownerId)?.active || !isOwner(ownerId)) fail('offline-owner-required');
+    const ownerIdentity = identity.get(ownerId);
+    if (!isOwner(ownerId) || !ownerIdentity || ownerIdentity.activity === 'UNKNOWN') fail('offline-owner-required');
     return store.transaction({ actorId: `offline-owner:${ownerId}`, requestId }, tx => {
       const key = canonicalAggregateKey([ownerId]); const payload = { accountId: ownerId, reason }; const payloadSha256 = hashPayload(payload); const replay = tx.mutation(operationId);
       if (replay) {

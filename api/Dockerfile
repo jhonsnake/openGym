@@ -53,7 +53,7 @@ RUN npm ci --omit=dev --omit=optional && npm cache clean --force
 
 # Every module server.js imports from the api root has to be named here: the image carries nothing
 # else, and one that is missing only shows at boot, as ERR_MODULE_NOT_FOUND.
-COPY server.js push-messages.js nudge.js nudge-copy.js verify-error.js password.js rate-limit.js passkeys-store.js device-link.js media.js queue.js sync-stamps.js durable.js admin-socket.js recover.js authority-contract.js authority-store.js authority-service.js authority-training.js authority-history.js authority-export.js authority-projections.js identity-authority.js subscription-calendar.js exercise-catalogue.js exercise-catalogue.json ./
+COPY server.js push-messages.js nudge.js nudge-copy.js verify-error.js password.js rate-limit.js passkeys-store.js device-link.js media.js queue.js sync-stamps.js durable.js admin-socket.js recover.js authority-contract.js authority-store.js authority-service.js client-entitlement.js authority-training.js authority-history.js authority-export.js authority-projections.js identity-authority.js subscription-calendar.js exercise-catalogue.js exercise-catalogue.json ./
 COPY scripts/bootstrap-operational-role.mjs ./scripts/bootstrap-operational-role.mjs
 COPY scripts/snapshot-authority.mjs ./scripts/snapshot-authority.mjs
 COPY coach ./coach

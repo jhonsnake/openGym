@@ -121,6 +121,9 @@ const MAX_BODY = 5 * 1024 * 1024;
 const SECURE = /^https:/i.test(ORIGIN) ? ' Secure;' : '';
 
 fs.mkdirSync(DATA, { recursive: true });
+if (fs.existsSync(path.join(DATA, '.bootstrap-recovery.json'))) {
+  throw new Error('Offline bootstrap recovery pending: keep writers stopped and rerun the offline bootstrap tool before startup');
+}
 /* The secrets are locked down file by file rather than by sealing the whole directory.
  *
  * A blanket `chmod 0700` on DATA looks stronger and is worse: ./data is a host bind mount and

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createAuthorityStore } from '../authority-store.js';
 import { createAuthorityService } from '../authority-service.js';
+import { createIdentityAuthority } from '../identity-authority.js';
 
 const id = n => `123e4567-e89b-42d3-a456-4266141740${String(n).padStart(2, '0')}`;
 function setup() {
@@ -121,4 +122,27 @@ test('mutateAuthority accepts only server authority context for expired consent 
   assert.throws(() => service.mutateAuthority({ ...base, operationId: id(32) }, () => ({ result: {} })), /forbidden/);
   assert.doesNotThrow(() => service.mutateAuthority({ ...base, operationId: id(33), authorityContext: { relationId, withdrawalOnly: true } }, () => ({ result: {} })));
   assert.throws(() => service.mutateAuthority({ ...base, operationId: id(34), authorityContext: { relationId, withdrawalOnly: false, unexpected: true } }, () => ({ result: {} })), /unknown/);
+});
+
+for (const activity of ['disabled', 'deleted']) test(`offline ${activity} owner revocation is audited and idempotent; grants and access deny`, () => {
+  const store = createAuthorityStore({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'owner-revoke-')) });
+  const owner = { id: 'owner' };
+  const identity = createIdentityAuthority({ getUser: uid => uid === 'owner' ? owner : null });
+  const service = createAuthorityService({ store, identity, isOwner: uid => uid === 'owner' || uid === 'missing', isAdmin: uid => uid === 'owner' });
+  const payload = { accountId: 'owner', roles: ['CLIENT', 'TRAINER', 'COORDINATOR'], reason: 'owner setup' };
+  service.bootstrapIndefiniteClientOffline({ ownerId: 'owner', operationId: id(80), payload });
+  owner[activity] = true;
+  assert.throws(() => service.accessSnapshot('owner'), /unauthenticated/);
+  assert.throws(() => store.transaction({}, tx => service.requireCapabilityTx(tx, { actorId: 'owner', capability: 'ACCESS_PERSONAL_TRAINING' })), /forbidden/);
+  assert.throws(() => service.bootstrapOffline({ ownerId: 'owner', operationId: id(81), payload }), /offline-owner-required/);
+  assert.throws(() => service.bootstrapIndefiniteClientOffline({ ownerId: 'owner', operationId: id(81), payload }), /offline-owner-required/);
+  const args = { ownerId: 'owner', operationId: id(82), reason: 'operator revocation' };
+  assert.equal(service.revokeIndefiniteClientOffline(args).result.entitlement.revoked, true);
+  assert.equal(service.revokeIndefiniteClientOffline(args).replayed, true);
+  assert.throws(() => service.revokeIndefiniteClientOffline({ ...args, reason: 'changed' }), /conflict/);
+  assert.throws(() => service.revokeIndefiniteClientOffline({ ...args, ownerId: 'missing' }), /offline-owner-required/);
+  assert.throws(() => service.revokeIndefiniteClientOffline({ ...args, ownerId: 'non-owner' }), /offline-owner-required/);
+  assert.equal(store.db.prepare("SELECT count(*) n FROM authority_audit WHERE entity_type='indefinite-client-entitlement'").get().n, 2);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM mutation_results').get().n, 2);
+  store.close();
 });
