@@ -1,5 +1,15 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## Corte vigente: recuperación entregada, consentimiento y navegador bajo corrección
+
+Los bloques inferiores son históricos frente a este corte. La recuperación incorporó tokens SESSION/SESSION_SET, vínculo a la ventana original, metadatos mínimos close-only y omisiones explícitas. Su revisión independiente acotada, sobre 187 archivos congelados, está en curso. La suite completa API terminó con 799 pruebas: 797 PASS, 2 FAIL y 0 SKIP. No se acepta como verde: los dos fallos corresponden a una regresión T7 que exige TODOS los grants propuestos al aceptar una invitación, en vez de respetar un subconjunto elegido explícitamente. Se corrige junto con el límite duradero de WEIGHT por periodo/categoría, manteniendo la coincidencia exacta de cada propuesta seleccionada, los registros privados y HISTORY expresamente consentido. No se añade ningún grant ni se concede peso implícitamente.
+
+La suite frontend congelada sobre repositorio completo terminó con 6612 pruebas: 6610 PASS, 2 FAIL y 0 pendientes. Un fallo era el alias Docker ya corregido y publicado en 13eb7ac; el otro era un marcador de valor vacío en ClientTraining (em dash frente al en dash establecido). Se reprodujo RED y corrigió ese carácter. Después pasaron 27 pruebas actuales de 6 archivos: placeholder, ClientTraining, wrapper API, TrainerPrescriptions, ClientConsent y montaje de App. Esto NO sustituye una nueva suite completa contra la fuente posterior.
+
+El workspace de entrenamiento, prescripción, metas y consentimiento fue entregado. Queda pendiente el productor server-owned de grants/grantId y trainerId para los lectores HISTORY y el consentimiento contextual. T9 anterior pasó M0, pero quedó bloqueado al buscar el encabezado administrativo en M1; no demuestra ausencia de ruta ni una ceremonia passkey. Se investiga autenticación, bootstrap, origen, readiness y fuente del navegador, sin mocks de API ni montaje alternativo. Después deben probarse ambos viewports con API real y comprobar persistencia.
+
+La prueba personal conserva TODOS los 6554 MP4, los 6554 WebP y sus avisos. La privacidad sigue siendo un gate. No se modificaron producción ni identidades, roles o suscripciones reales. El MVP no se ha desplegado.
+
 ## Bloqueo de privacidad y verificación empaquetada más recientes
 
 La prueba aislada de retirada y nueva concesión de WEIGHT reprodujo exposición de una medición capturada durante el intervalo privado, sin HISTORY explícito. No hubo datos reales ni producción afectados. El despliegue queda bloqueado: se requiere un límite duradero por periodo/categoría de consentimiento y regresiones de no exposición, preservando captura privada, registros propios y exportación. La corrección está preparada para el siguiente corte API exclusivo; no se asume implementada.
