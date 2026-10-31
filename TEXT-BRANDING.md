@@ -19,6 +19,16 @@ Intentional exceptions: required license/media attribution, upstream URLs (inclu
 
 Evidence is ignored under `frontend/artifacts/branding/`: `parent-text-tests.log`, `text-settings-tests.log`, `donation-identity-red.log`, `text-final-build.log`, `text-final-browser.log`.
 
+## Published verification
+
+Published source commit: `7b96751ea16dcebccc072da0ce63ad8b52837244`.
+Production web image: `johngym-web:7b96751ea`, ID `sha256:8618d956efa737a4807edc8842dd02a6f99b852d4130984535de745f40a9939f`.
+Release archive SHA-256: `5ffaaf82c2f509c19f7b158fa8213b48c3fbe83eca0fbd4b144d3857cb5fc058`.
+Rollback Compose: `/opt/opengym/releases/johngym-7b96751ea/compose.before.yaml`.
+The new image layers on `johngym-web:955d73fd4`, preserving that release's hashed chunks.
+Public HTML and its served CSP match the new boot hash. Public health is OK; password login and invitation-only registration remain enabled, guest access remains disabled. API container ID/start time did not change during this web-only release.
+Published SW cache: `johngym-shell-b758008422`.
+
 ## Deployment contract
 
 Overlay the built frontend on the previous production JohnGym image through `PREVIOUS_WEB`, retaining prior hashed assets and media. Replace only web; preserve API, PASSWORD_LOGIN=1, invitation-only enrollment and disabled guest access.
