@@ -1,12 +1,13 @@
 import crypto from 'node:crypto';
 import { CAPABILITIES, canonicalAggregateKey, hashPayload, parseAuthorityPayload, validateMutationEnvelope, uuid } from './authority-contract.js';
 import { panamaDateAtServerClock, panamaDayStartUtc, periodEndExclusiveUtc } from './subscription-calendar.js';
+import { activeClientEntitlement, clientEntitled } from './client-entitlement.js';
 
 const now = () => new Date().toISOString();
 const fail = message => { const error = new Error(message); error.code = message; throw error; };
 const id = () => crypto.randomUUID();
 const activeRole = (db, uid, role) => !!db.prepare('SELECT 1 FROM operational_roles WHERE account_id=? AND role=? AND removed_at_utc IS NULL').get(uid, role);
-const entitled = (db, uid, at) => !!db.prepare('SELECT 1 FROM subscription_intervals WHERE client_id=? AND start_utc<=? AND end_exclusive_utc>?').get(uid, at, at);
+const entitled = clientEntitled;
 const currentWindow = (db, relationId, at) => !!db.prepare("SELECT 1 FROM relation_access_windows WHERE relation_id=? AND enabled_from_utc<=? AND (ended_at_utc IS NULL OR ended_at_utc>?)").get(relationId, at, at);
 // A grant's range filters the data a later projector may expose. It is not an
 // expiry for present consent: a client may consent today to history from last year.
@@ -450,10 +451,10 @@ export function createAuthorityService({ store, identity, historyPublisher, isAd
       requireActive(actorId); if (!activeRole(tx.db, actorId, 'COORDINATOR')) fail('forbidden');
       const at = clock();
       const requested = readPage(page);
-      const sql = "SELECT s.client_id, i.start_utc, i.end_exclusive_utc FROM coordinator_scopes s LEFT JOIN subscription_intervals i ON i.id=(SELECT current.id FROM subscription_intervals current WHERE current.client_id=s.client_id ORDER BY CASE WHEN current.start_utc<=? AND current.end_exclusive_utc>? THEN 1 ELSE 0 END DESC, current.end_exclusive_utc DESC LIMIT 1) WHERE s.coordinator_id=? AND s.removed_at_utc IS NULL AND EXISTS(SELECT 1 FROM operational_roles r WHERE r.account_id=s.client_id AND r.role='CLIENT' AND r.removed_at_utc IS NULL) ORDER BY s.client_id";
-      const result = requested ? pagedFilteredRows(tx, sql, [at, at, actorId], requested, row => identity.get(row.client_id)?.active) : { items: tx.db.prepare(sql).all(at, at, actorId).filter(row => identity.get(row.client_id)?.active), hasMore: false };
+      const sql = "SELECT s.client_id FROM coordinator_scopes s WHERE s.coordinator_id=? AND s.removed_at_utc IS NULL AND EXISTS(SELECT 1 FROM operational_roles r WHERE r.account_id=s.client_id AND r.role='CLIENT' AND r.removed_at_utc IS NULL) ORDER BY s.client_id";
+      const result = requested ? pagedFilteredRows(tx, sql, [actorId], requested, row => identity.get(row.client_id)?.active) : { items: tx.db.prepare(sql).all(actorId).filter(row => identity.get(row.client_id)?.active), hasMore: false };
       const clients = result.items
-        .map(row => ({ clientId: row.client_id, entitlement: { active: !!row.start_utc && row.start_utc <= at && at < row.end_exclusive_utc, startUtc: row.start_utc ?? null, endExclusiveUtc: row.end_exclusive_utc ?? null, version: tx.getAggregateVersion('SUBSCRIPTION', [row.client_id]) } }));
+        .map(row => { const entitlement = activeClientEntitlement(tx.db, row.client_id, at); return { clientId: row.client_id, entitlement: { active: !!entitlement, startUtc: entitlement?.startUtc ?? null, endExclusiveUtc: entitlement?.endExclusiveUtc ?? null, version: tx.getAggregateVersion('SUBSCRIPTION', [row.client_id]) } }; });
       return requested ? { clients, hasMore: result.hasMore, nextOffset: result.nextOffset } : clients;
     });
   }
@@ -461,8 +462,8 @@ export function createAuthorityService({ store, identity, historyPublisher, isAd
     return store.transaction({ actorId }, tx => {
       requireActive(actorId); if (!activeRole(tx.db, actorId, 'TRAINER')) fail('forbidden'); const at = clock();
       const requested = readPage(page);
-      const sql = "SELECT r.id,r.client_id,r.state FROM relations r WHERE r.trainer_id=? AND r.state='ACTIVE' AND EXISTS(SELECT 1 FROM subscription_intervals s WHERE s.client_id=r.client_id AND s.start_utc<=? AND s.end_exclusive_utc>?) ORDER BY r.id";
-      const result = requested ? pagedRows(tx, sql, [actorId, at, at], requested) : { items: tx.db.prepare(sql).all(actorId, at, at), hasMore: false };
+      const sql = "SELECT r.id,r.client_id,r.state FROM relations r WHERE r.trainer_id=? AND r.state='ACTIVE' ORDER BY r.id";
+      const result = requested ? pagedFilteredRows(tx, sql, [actorId], requested, row => entitled(tx.db, row.client_id, at)) : { items: tx.db.prepare(sql).all(actorId).filter(row => entitled(tx.db, row.client_id, at)), hasMore: false };
       const portfolio = result.items.map(row => ({ relationId: row.id, clientId: row.client_id, state: row.state, version: tx.getAggregateVersion('RELATION', [row.id]) }));
       return requested ? { portfolio, hasMore: result.hasMore, nextOffset: page.offset + portfolio.length } : portfolio;
     });
@@ -605,16 +606,54 @@ export function createAuthorityService({ store, identity, historyPublisher, isAd
       return { operationId, entity: { type: 'roles', id: ownerId, version: token.version }, versionTokens: [token], result: { accountId: ownerId, roles: payload.roles }, requestId };
     });
   }
+  function bootstrapIndefiniteClientOffline({ ownerId, operationId, payload, requestId = 'offline-indefinite-client-bootstrap' }) {
+    uuid(operationId, 'operationId'); payload = parseAuthorityPayload('roles', payload);
+    if (payload.accountId !== ownerId || !identity.get(ownerId)?.active || !isOwner(ownerId)) fail('offline-owner-required');
+    if (!['CLIENT', 'TRAINER', 'COORDINATOR'].every(role => payload.roles.includes(role))) fail('offline-indefinite-client-roles-required');
+    return store.transaction({ actorId: `offline-owner:${ownerId}`, requestId }, tx => {
+      const key = canonicalAggregateKey([ownerId]); const payloadSha256 = hashPayload(payload); const replay = tx.mutation(operationId);
+      if (replay) {
+        if (replay.actor_id !== `offline-owner:${ownerId}` || replay.subject_id !== ownerId || replay.capability !== 'BOOTSTRAP_INDEFINITE_CLIENT' || replay.aggregate_kind !== 'SUBSCRIPTION' || replay.aggregate_key !== key || replay.payload_sha256 !== payloadSha256) fail('conflict');
+        return { operationId, replayed: true, entity: { type: replay.result_entity_type, id: replay.result_entity_id, version: replay.result_version }, versionTokens: [{ kind: 'ROLES', key, version: tx.getAggregateVersion('ROLES', key) }, { kind: 'SUBSCRIPTION', key, version: tx.getAggregateVersion('SUBSCRIPTION', key) }], result: JSON.parse(replay.result_metadata_json), requestId };
+      }
+      const stamp = clock(); const before = { roles: tx.db.prepare('SELECT role FROM operational_roles WHERE account_id=? AND removed_at_utc IS NULL ORDER BY role').all(ownerId).map(row => row.role) };
+      replaceRoles(tx, { accountId: ownerId, roles: payload.roles, reason: payload.reason, actorId: `offline-owner:${ownerId}`, stamp });
+      const grantId = id(); tx.db.prepare('INSERT INTO indefinite_client_entitlements(id,client_id,granted_by,granted_at_utc,reason,version) VALUES (?,?,?,?,?,1)').run(grantId, ownerId, `offline-owner:${ownerId}`, stamp, payload.reason);
+      const roleToken = tx.bumpAggregate('ROLES', key); const entitlementToken = tx.bumpAggregate('SUBSCRIPTION', key); const entitlement = { indefinite: true, startUtc: null, endExclusiveUtc: null, id: grantId };
+      tx.recordMutation({ operationId, actorId: `offline-owner:${ownerId}`, capability: 'BOOTSTRAP_INDEFINITE_CLIENT', subjectId: ownerId, aggregateKind: 'SUBSCRIPTION', aggregateKey: key, payloadSha256, resultEntityType: 'indefinite-client-entitlement', resultEntityId: grantId, resultVersion: entitlementToken.version, resultMetadata: { accountId: ownerId, roles: payload.roles, entitlement } });
+      tx.audit({ actorId: `offline-owner:${ownerId}`, subjectId: ownerId, entityType: 'roles', entityId: ownerId, before, after: { roles: payload.roles }, reason: payload.reason, requestId });
+      tx.audit({ actorId: `offline-owner:${ownerId}`, subjectId: ownerId, entityType: 'indefinite-client-entitlement', entityId: grantId, after: entitlement, reason: payload.reason, requestId });
+      return { operationId, entity: { type: 'indefinite-client-entitlement', id: grantId, version: entitlementToken.version }, versionTokens: [roleToken, entitlementToken], result: { accountId: ownerId, roles: payload.roles, entitlement }, requestId };
+    });
+  }
+  function revokeIndefiniteClientOffline({ ownerId, operationId, reason, requestId = 'offline-indefinite-client-revoke' }) {
+    uuid(operationId, 'operationId');
+    if (typeof reason !== 'string' || reason.length < 1 || reason.length > 280) fail('invalid reason');
+    if (!identity.get(ownerId)?.active || !isOwner(ownerId)) fail('offline-owner-required');
+    return store.transaction({ actorId: `offline-owner:${ownerId}`, requestId }, tx => {
+      const key = canonicalAggregateKey([ownerId]); const payload = { accountId: ownerId, reason }; const payloadSha256 = hashPayload(payload); const replay = tx.mutation(operationId);
+      if (replay) {
+        if (replay.actor_id !== `offline-owner:${ownerId}` || replay.subject_id !== ownerId || replay.capability !== 'REVOKE_INDEFINITE_CLIENT' || replay.aggregate_kind !== 'SUBSCRIPTION' || replay.aggregate_key !== key || replay.payload_sha256 !== payloadSha256) fail('conflict');
+        return { operationId, replayed: true, entity: { type: replay.result_entity_type, id: replay.result_entity_id, version: replay.result_version }, versionTokens: [{ kind: 'SUBSCRIPTION', key, version: tx.getAggregateVersion('SUBSCRIPTION', key) }], result: JSON.parse(replay.result_metadata_json), requestId };
+      }
+      const active = tx.db.prepare('SELECT id FROM indefinite_client_entitlements WHERE client_id=? AND revoked_at_utc IS NULL').get(ownerId); if (!active) fail('indefinite-client-entitlement-not-found');
+      const stamp = clock(); tx.db.prepare('UPDATE indefinite_client_entitlements SET revoked_at_utc=?,revoked_by=?,revoke_reason=?,version=version+1 WHERE id=?').run(stamp, `offline-owner:${ownerId}`, reason, active.id);
+      const token = tx.bumpAggregate('SUBSCRIPTION', key); const result = { accountId: ownerId, entitlement: { indefinite: false, revoked: true, id: active.id } };
+      tx.recordMutation({ operationId, actorId: `offline-owner:${ownerId}`, capability: 'REVOKE_INDEFINITE_CLIENT', subjectId: ownerId, aggregateKind: 'SUBSCRIPTION', aggregateKey: key, payloadSha256, resultEntityType: 'indefinite-client-entitlement', resultEntityId: active.id, resultVersion: token.version, resultMetadata: result });
+      tx.audit({ actorId: `offline-owner:${ownerId}`, subjectId: ownerId, entityType: 'indefinite-client-entitlement', entityId: active.id, before: { indefinite: true }, after: result.entitlement, reason, requestId });
+      return { operationId, entity: { type: 'indefinite-client-entitlement', id: active.id, version: token.version }, versionTokens: [token], result, requestId };
+    });
+  }
   function accessSnapshot(actorId, { managedSubscriptions = false, requestId = '' } = {}) {
     const identityRow = identity.get(actorId); if (!identityRow?.active) fail('unauthenticated');
     const roles = store.db.prepare('SELECT role FROM operational_roles WHERE account_id=? AND removed_at_utc IS NULL ORDER BY role').all(actorId).map(row => row.role);
-    const interval = store.db.prepare('SELECT start_utc,end_exclusive_utc,version FROM subscription_intervals WHERE client_id=? AND start_utc<=? AND end_exclusive_utc>? ORDER BY end_exclusive_utc DESC LIMIT 1').get(actorId, clock(), clock());
+    const interval = activeClientEntitlement(store.db, actorId, clock());
     const entitlementVersion = store.getAggregateVersion('SUBSCRIPTION', canonicalAggregateKey([actorId]));
     const capability = name => { try { return store.transaction({ actorId, requestId }, tx => { requireCapabilityTx(tx, { actorId, subjectId: actorId, capability: name }); return true; }); } catch { return false; } };
-    return { account: { id: actorId, activity: identityRow.activity }, managedSubscriptions, roles, entitlement: { active: !!interval, startUtc: interval?.start_utc ?? null, endExclusiveUtc: interval?.end_exclusive_utc ?? null, version: entitlementVersion }, capabilities: CAPABILITIES.filter(capability), compatibility: { protectedTraining: 'supported' }, requestId, versionTokens: [{ kind: 'ROLES', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('ROLES', canonicalAggregateKey([actorId])) }, { kind: 'SUBSCRIPTION', key: canonicalAggregateKey([actorId]), version: entitlementVersion }, { kind: 'EXPORT_SET', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('EXPORT_SET', canonicalAggregateKey([actorId])) }, { kind: 'DELETION_REQUEST_SET', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('DELETION_REQUEST_SET', canonicalAggregateKey([actorId])) }] };
+    return { account: { id: actorId, activity: identityRow.activity }, managedSubscriptions, roles, entitlement: { active: !!interval, startUtc: interval?.startUtc ?? null, endExclusiveUtc: interval?.endExclusiveUtc ?? null, version: entitlementVersion }, capabilities: CAPABILITIES.filter(capability), compatibility: { protectedTraining: 'supported' }, requestId, versionTokens: [{ kind: 'ROLES', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('ROLES', canonicalAggregateKey([actorId])) }, { kind: 'SUBSCRIPTION', key: canonicalAggregateKey([actorId]), version: entitlementVersion }, { kind: 'EXPORT_SET', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('EXPORT_SET', canonicalAggregateKey([actorId])) }, { kind: 'DELETION_REQUEST_SET', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('DELETION_REQUEST_SET', canonicalAggregateKey([actorId])) }] };
   }
   return {
-    requireCapabilityTx, mutateAuthority, preflightAuthority, setRoles, setScope, bootstrapOffline, accessSnapshot,
+    requireCapabilityTx, mutateAuthority, preflightAuthority, setRoles, setScope, bootstrapOffline, bootstrapIndefiniteClientOffline, revokeIndefiniteClientOffline, accessSnapshot,
     createInvitation, replaceInvitation, previewInvitation, acceptInvitation, invitationDecision, changeRelation,
     replaceGrants, revokeGrant, confirmCommercialOperation, commercialClients, trainerPortfolio,
     trainerRelations, trainerInvitations, clientRelations, scopePairs, reserveEnrollment, verifyEnrollment, completeEnrollment, enrollmentMetadata, recoverEnrollmentIdentity

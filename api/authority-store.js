@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DatabaseSync, backup } from 'node:sqlite';
 import { canonicalAggregateKey } from './authority-contract.js';
 
-export const AUTHORITY_SCHEMA_VERSION = 5;
+export const AUTHORITY_SCHEMA_VERSION = 6;
 const SCHEMA_VERSION = AUTHORITY_SCHEMA_VERSION;
 const sql = String.raw`
 CREATE TABLE schema_meta (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version>=0));
@@ -25,6 +25,8 @@ CREATE TABLE relation_grants (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REF
 CREATE UNIQUE INDEX relation_grants_active_unique ON relation_grants(relation_id,kind,coalesce(window_start_utc,''),coalesce(window_end_exclusive_utc,'')) WHERE state='ACTIVE';
   CREATE TABLE relation_pending_grants (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), kind TEXT NOT NULL CHECK(kind IN ('PLAN','EXECUTION','HISTORY','WEIGHT')), window_start_utc TEXT, window_end_exclusive_utc TEXT, include_weight INTEGER NOT NULL DEFAULT 0 CHECK(include_weight IN (0,1)), consented_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(window_start_utc IS NULL OR window_end_exclusive_utc IS NULL OR window_start_utc<window_end_exclusive_utc));
 CREATE TABLE subscription_intervals (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, start_utc TEXT NOT NULL, end_exclusive_utc TEXT NOT NULL, anchor_day INTEGER NOT NULL CHECK(anchor_day BETWEEN 1 AND 31), kind TEXT NOT NULL CHECK(kind IN ('MONTHLY','QUARTERLY','SEMIANNUAL','ANNUAL','CUSTOM')), reference TEXT NOT NULL CHECK(length(reference) BETWEEN 1 AND 160), reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 280), created_by TEXT NOT NULL, created_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), CHECK(start_utc<end_exclusive_utc));
+CREATE TABLE indefinite_client_entitlements (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, granted_by TEXT NOT NULL, granted_at_utc TEXT NOT NULL, reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 280), version INTEGER NOT NULL CHECK(version>=1), revoked_at_utc TEXT, revoked_by TEXT, revoke_reason TEXT CHECK(revoke_reason IS NULL OR length(revoke_reason) BETWEEN 1 AND 280));
+CREATE UNIQUE INDEX indefinite_client_entitlements_active_unique ON indefinite_client_entitlements(client_id) WHERE revoked_at_utc IS NULL;
 CREATE TABLE commercial_operations (operation_id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, client_id TEXT NOT NULL, payload_hash TEXT NOT NULL, expected_subscription_version INTEGER NOT NULL CHECK(expected_subscription_version>=0), result_interval_id TEXT NOT NULL REFERENCES subscription_intervals(id), created_at_utc TEXT NOT NULL);
 CREATE TABLE goal_versions (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), version_number INTEGER NOT NULL CHECK(version_number>=1), payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, created_by TEXT NOT NULL, created_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), UNIQUE(relation_id,version_number));
 CREATE TABLE plan_versions (id TEXT PRIMARY KEY, relation_id TEXT NOT NULL REFERENCES relations(id), version_number INTEGER NOT NULL CHECK(version_number>=1), goal_version_id TEXT REFERENCES goal_versions(id), payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, created_by TEXT NOT NULL, published_at_utc TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1), UNIQUE(relation_id,version_number));
@@ -93,12 +95,15 @@ UPDATE authority_meta SET schema_version=4 WHERE id=1;`);
         if (!grantColumns.has('eligible_from_utc')) db.exec('ALTER TABLE relation_grants ADD COLUMN eligible_from_utc TEXT;');
         db.exec('UPDATE schema_meta SET version=5 WHERE id=1; UPDATE authority_meta SET schema_version=5 WHERE id=1;');
         db.prepare('UPDATE relation_grants SET eligible_from_utc=? WHERE eligible_from_utc IS NULL').run(migrationStamp);
+      }
+      if (row.version >= 1 && row.version <= 5) {
+        db.exec("CREATE TABLE IF NOT EXISTS indefinite_client_entitlements (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, granted_by TEXT NOT NULL, granted_at_utc TEXT NOT NULL, reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 280), version INTEGER NOT NULL CHECK(version>=1), revoked_at_utc TEXT, revoked_by TEXT, revoke_reason TEXT CHECK(revoke_reason IS NULL OR length(revoke_reason) BETWEEN 1 AND 280)); CREATE UNIQUE INDEX IF NOT EXISTS indefinite_client_entitlements_active_unique ON indefinite_client_entitlements(client_id) WHERE revoked_at_utc IS NULL; UPDATE schema_meta SET version=6 WHERE id=1; UPDATE authority_meta SET schema_version=6 WHERE id=1;");
       } else if (row.version !== SCHEMA_VERSION) throw new Error('unsupported authority schema migration');
       const meta = db.prepare('SELECT schema_version FROM authority_meta WHERE id=1').get();
       if (!meta || meta.schema_version > SCHEMA_VERSION) throw new Error('authority schema is newer than this server');
       if (meta.schema_version !== SCHEMA_VERSION) throw new Error('unsupported authority schema migration');
     }
-    if (previousVersion === 1 || previousVersion === 2 || previousVersion === 3 || previousVersion === 4) {
+    if (previousVersion === 1 || previousVersion === 2 || previousVersion === 3 || previousVersion === 4 || previousVersion === 5) {
       const foreignKeyErrors = db.prepare('PRAGMA foreign_key_check').all();
       if (foreignKeyErrors.length) throw new Error('authority migration foreign-key check failed');
     }

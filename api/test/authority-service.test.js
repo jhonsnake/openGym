@@ -84,6 +84,37 @@ test('trainer functional capabilities require the subject CLIENT role while own 
   assert.doesNotThrow(() => store.transaction({}, tx => service.requireCapabilityTx(tx, { actorId: 'subject', subjectId: 'subject', capability: 'EXPORT_OWN_DATA' })));
 });
 
+test('an explicit indefinite client grant is revocable and never becomes an administrator bypass', () => {
+  const { store, service } = setup(); const relationId = seedRelation(store, { grantKinds: ['PLAN', 'EXECUTION'], entitled: false }); const at = new Date().toISOString();
+  store.transaction({}, tx => {
+    tx.db.prepare("INSERT INTO indefinite_client_entitlements(id,client_id,granted_by,granted_at_utc,reason,version) VALUES ('indefinite','subject','admin',?,'owner grant',1)").run(at);
+    tx.db.prepare("INSERT INTO operational_roles(id,account_id,role,assigned_by,assigned_at_utc,version,reason) VALUES ('co','subject','COORDINATOR','admin',?,1,'x')").run(at);
+    tx.db.prepare("INSERT INTO coordinator_scopes(id,coordinator_id,client_id,assigned_by,assigned_at_utc,version,reason) VALUES ('scope','subject','subject','admin',?,1,'x')").run(at);
+  });
+  const snapshot = service.accessSnapshot('subject', { managedSubscriptions: true, requestId: 'indefinite' });
+  assert.deepEqual(snapshot.entitlement, { active: true, startUtc: null, endExclusiveUtc: null, version: 0 });
+  assert.ok(snapshot.capabilities.includes('ACCESS_PERSONAL_TRAINING'));
+  assert.doesNotThrow(() => store.transaction({}, tx => service.requireCapabilityTx(tx, { actorId: 'admin', subjectId: 'subject', capability: 'PUBLISH_PLAN', relationId })));
+  assert.equal(service.trainerPortfolio('admin').length, 1);
+  assert.deepEqual(service.commercialClients('subject').map(client => client.entitlement), [{ active: true, startUtc: null, endExclusiveUtc: null, version: 0 }]);
+  assert.throws(() => store.transaction({}, tx => service.requireCapabilityTx(tx, { actorId: 'admin', subjectId: 'admin', capability: 'ACCESS_PERSONAL_TRAINING' })), /forbidden/);
+  store.transaction({}, tx => tx.db.prepare("UPDATE indefinite_client_entitlements SET revoked_at_utc=?,revoked_by='admin' WHERE id='indefinite'").run(at));
+  assert.equal(service.accessSnapshot('subject', { managedSubscriptions: true, requestId: 'revoked' }).entitlement.active, false);
+  assert.throws(() => store.transaction({}, tx => service.requireCapabilityTx(tx, { actorId: 'admin', subjectId: 'subject', capability: 'PUBLISH_PLAN', relationId })), /forbidden/);
+});
+
+test('indefinite entitlement still requires an active identity and CLIENT role, while finite intervals stay finite', () => {
+  const { store, service } = setup(); const at = new Date().toISOString();
+  store.transaction({}, tx => {
+    tx.db.prepare("INSERT INTO operational_roles(id,account_id,role,assigned_by,assigned_at_utc,version,reason) VALUES ('cl','subject','CLIENT','admin',?,1,'x')").run(at);
+    tx.db.prepare("INSERT INTO indefinite_client_entitlements(id,client_id,granted_by,granted_at_utc,reason,version) VALUES ('indefinite','subject','admin',?,'owner grant',1)").run(at);
+    tx.db.prepare("INSERT INTO subscription_intervals(id,client_id,start_utc,end_exclusive_utc,anchor_day,kind,reference,reason,created_by,created_at_utc,version) VALUES ('finite','admin','2026-01-01T00:00:00.000Z','2099-01-01T00:00:00.000Z',1,'MONTHLY','r','x','admin',?,1)").run(at);
+  });
+  assert.equal(service.accessSnapshot('admin', { managedSubscriptions: true, requestId: 'finite' }).entitlement.endExclusiveUtc, '2099-01-01T00:00:00.000Z');
+  store.transaction({}, tx => tx.db.prepare("UPDATE operational_roles SET removed_at_utc=? WHERE account_id='subject' AND role='CLIENT'").run(at));
+  assert.equal(service.accessSnapshot('subject', { managedSubscriptions: true, requestId: 'role-removed' }).capabilities.includes('ACCESS_PERSONAL_TRAINING'), false);
+});
+
 test('mutateAuthority accepts only server authority context for expired consent withdrawal', () => {
   const { store, service } = setup(); const relationId = seedRelation(store, { grantKinds: [], entitled: false });
   const base = { actorId: 'subject', capability: 'CHANGE_GRANT', subjectId: 'subject', aggregateKind: 'RELATION', aggregateKey: [relationId], operationId: id(31), expectedVersion: 0, payload: { relationId, withdrawalOnly: true } };

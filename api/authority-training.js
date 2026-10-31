@@ -3,6 +3,7 @@ import { canonicalAggregateKey, hashPayload, parseAuthorityPayload, validateMuta
 import { filterHistoryShareForCurrentGrants, projectLegacyBodyweight } from './authority-projections.js';
 import { createHistoryPublisher } from './authority-history.js';
 import { exerciseResolver } from './exercise-catalogue.js';
+import { clientEntitled } from './client-entitlement.js';
 
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
 const id = () => crypto.randomUUID();
@@ -11,7 +12,7 @@ const grant = (db, relationId, kind, at) => db.prepare("SELECT * FROM relation_g
 const activeWindow = (db, relationId, at) => db.prepare("SELECT * FROM relation_access_windows WHERE relation_id=? AND enabled_from_utc<=? AND (ended_at_utc IS NULL OR ended_at_utc>?)").get(relationId, at, at);
 const activeSessionWindow = (db, session, at) => db.prepare("SELECT * FROM relation_access_windows WHERE id=? AND relation_id=? AND enabled_from_utc<=? AND (ended_at_utc IS NULL OR ended_at_utc>?)").get(session.access_window_id, session.relation_id, session.server_started_at_utc, at);
 const relation = (db, relationId) => db.prepare('SELECT * FROM relations WHERE id=?').get(relationId);
-const entitled = (db, clientId, at) => !!db.prepare('SELECT 1 FROM subscription_intervals WHERE client_id=? AND start_utc<=? AND end_exclusive_utc>?').get(clientId, at, at);
+const entitled = clientEntitled;
 
 function localPage({ rows, cursor, limit = 25 }) {
   const n = Number(limit); if (!Number.isInteger(n) || n < 1 || n > 100) fail('validation-error');

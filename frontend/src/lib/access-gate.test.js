@@ -64,6 +64,13 @@ describe('access-gate', () => {
     expect(gate.getState().status).toBe('allowed')
   })
 
+  it('accepts an explicit indefinite entitlement without inventing an expiry', async () => {
+    const gate = createAccessGate({ getAccess: async () => access({ entitlement: { active: true, startUtc: null, endExclusiveUtc: null, version: 2 } }) })
+    await gate.refresh('indefinite')
+    expect(gate.getState()).toMatchObject({ status: 'allowed' })
+    expect(gate.getState().access.entitlement).toMatchObject({ active: true, startUtc: null, endExclusiveUtc: null })
+  })
+
   it('invalidates after protected HTTP statuses without auto-refreshing', async () => {
     const getAccess = vi.fn().mockResolvedValue(access())
     const gate = createAccessGate({ getAccess })

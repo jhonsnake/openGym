@@ -127,9 +127,10 @@ export function createAuthorityExport({ store, authority, identity, readLegacyDa
       const executions = tx.db.prepare('SELECT id,payload_json AS payloadJson,submitted_at_utc AS submittedAtUtc FROM session_executions WHERE client_id=? ORDER BY submitted_at_utc,id').all(actorId);
       const bodyweight = tx.db.prepare('SELECT id,weight,unit,reported_date_panama AS reportedDatePanama,received_at_utc AS receivedAtUtc FROM bodyweight_entries WHERE client_id=? ORDER BY received_at_utc,id').all(actorId);
       const subscriptions = tx.db.prepare('SELECT id,start_utc AS startUtc,end_exclusive_utc AS endExclusiveUtc,anchor_day AS anchorDay,kind,reference,reason,created_at_utc AS createdAtUtc FROM subscription_intervals WHERE client_id=? ORDER BY start_utc,id').all(actorId);
+      const indefiniteEntitlements = tx.db.prepare('SELECT id,granted_at_utc AS grantedAtUtc,revoked_at_utc AS revokedAtUtc,reason,revoke_reason AS revokeReason FROM indefinite_client_entitlements WHERE client_id=? ORDER BY granted_at_utc,id').all(actorId).map(row => ({ ...row }));
       const relations = tx.db.prepare('SELECT id,state,accepted_at_utc AS acceptedAtUtc,confirmed_at_utc AS confirmedAtUtc,ended_at_utc AS endedAtUtc FROM relations WHERE client_id=? ORDER BY accepted_at_utc,id').all(actorId);
       const grants = tx.db.prepare('SELECT relation_id AS relationId,kind,state,window_start_utc AS startUtc,window_end_exclusive_utc AS endExclusiveUtc,revoked_at_utc AS revokedAtUtc FROM relation_grants WHERE relation_id IN (SELECT id FROM relations WHERE client_id=?) ORDER BY relation_id,kind,version,id').all(actorId);
-      return { executions, bodyweight, subscriptions, relations, grants };
+      return { executions, bodyweight, subscriptions, indefiniteEntitlements, relations, grants };
     });
   }
 
@@ -150,7 +151,7 @@ export function createAuthorityExport({ store, authority, identity, readLegacyDa
       schema: 'opengym.owned-export.v1', generatedAtUtc,
       legacyState: legacyDocument(legacy),
       sqlite: { sessionExecutionActuals: actuals, bodyweightEntries: bodyweight },
-      commercial: { subscriptionIntervals: snapshot.subscriptions },
+      commercial: { subscriptionIntervals: snapshot.subscriptions, indefiniteClientEntitlements: snapshot.indefiniteEntitlements },
       consent: { relations: snapshot.relations.map(row => ({ id: row.id, state: row.state, acceptedAtUtc: row.acceptedAtUtc, confirmedAtUtc: row.confirmedAtUtc, endedAtUtc: row.endedAtUtc, grants: grantsByRelation.get(row.id) || [] })) }
     };
   }

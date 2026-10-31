@@ -4440,8 +4440,8 @@ components:
         commercial:
           type: object
           additionalProperties: false
-          required: [subscriptionIntervals]
-          properties: { subscriptionIntervals: { type: array, items: { type: object, additionalProperties: false, required: [id, startUtc, endExclusiveUtc, anchorDay, kind, reference, reason, createdAtUtc], properties: { id: { type: string }, startUtc: { $ref: '#/components/schemas/IsoUtc' }, endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }, anchorDay: { type: integer }, kind: { type: string }, reference: { type: string }, reason: { type: string }, createdAtUtc: { $ref: '#/components/schemas/IsoUtc' } } } } }
+          required: [subscriptionIntervals, indefiniteClientEntitlements]
+          properties: { subscriptionIntervals: { type: array, items: { type: object, additionalProperties: false, required: [id, startUtc, endExclusiveUtc, anchorDay, kind, reference, reason, createdAtUtc], properties: { id: { type: string }, startUtc: { $ref: '#/components/schemas/IsoUtc' }, endExclusiveUtc: { $ref: '#/components/schemas/IsoUtc' }, anchorDay: { type: integer }, kind: { type: string }, reference: { type: string }, reason: { type: string }, createdAtUtc: { $ref: '#/components/schemas/IsoUtc' } } } }, indefiniteClientEntitlements: { type: array, items: { type: object, additionalProperties: false, required: [id, grantedAtUtc, revokedAtUtc, reason, revokeReason], properties: { id: { type: string }, grantedAtUtc: { $ref: '#/components/schemas/IsoUtc' }, revokedAtUtc: { oneOf: [{ $ref: '#/components/schemas/IsoUtc' }, { type: 'null' }] }, reason: { type: string }, revokeReason: { oneOf: [{ type: string }, { type: 'null' }] } } } } }
         consent:
           type: object
           additionalProperties: false

@@ -187,6 +187,7 @@ test('creates a stable standalone authority snapshot without changing a read-onl
         relation_grants: 1,
         relation_pending_grants: 1,
         subscription_intervals: 0,
+        indefinite_client_entitlements: 0,
         commercial_operations: 0,
         goal_versions: 1,
         plan_versions: 1,

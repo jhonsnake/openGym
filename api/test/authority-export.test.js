@@ -89,6 +89,7 @@ test('download exports all selected own actuals and metadata but filters unappro
     tx.db.prepare("INSERT INTO bodyweight_entries(id,client_id,weight,unit,reported_date_panama,received_at_utc,operation_id,version) VALUES ('bw-owner','owner',80,'KG','2026-10-30',?, ?,1)").run(at, op());
     tx.db.prepare("INSERT INTO bodyweight_entries(id,client_id,weight,unit,reported_date_panama,received_at_utc,operation_id,version) VALUES ('bw-other','other',70,'KG','2026-10-30',?, ?,1)").run(at, op());
     tx.db.prepare("INSERT INTO subscription_intervals(id,client_id,start_utc,end_exclusive_utc,anchor_day,kind,reference,reason,created_by,created_at_utc,version) VALUES ('sub-owner','owner','2026-01-01T00:00:00.000Z','2099-01-01T00:00:00.000Z',1,'MONTHLY','receipt-owner','own commercial record','admin',?,1)").run(at);
+    tx.db.prepare("INSERT INTO indefinite_client_entitlements(id,client_id,granted_by,granted_at_utc,reason,version) VALUES ('indefinite-owner','owner','admin',?,'authorized owner grant',1)").run(at);
   });
   const job = api.requestExport(command('owner')).result.jobId;
   const document = await api.downloadExport({ actorId: 'owner', jobId: job });
@@ -105,6 +106,7 @@ test('download exports all selected own actuals and metadata but filters unappro
   assert.equal(document.sqlite.sessionExecutionActuals[0].sourceRecordId, 'execution-owner');
   assert.equal(JSON.stringify(document.sqlite.sessionExecutionActuals).includes('prescriptionTarget'), false);
   assert.equal(document.commercial.subscriptionIntervals[0].id, 'sub-owner');
+  assert.deepEqual(document.commercial.indefiniteClientEntitlements, [{ id: 'indefinite-owner', grantedAtUtc: at, revokedAtUtc: null, reason: 'authorized owner grant', revokeReason: null }]);
   assert.equal(JSON.stringify(document).includes('snapshot_json'), false);
   assert.equal(JSON.stringify(document).includes('authority_audit'), false);
 });

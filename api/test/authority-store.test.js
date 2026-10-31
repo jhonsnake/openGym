@@ -92,7 +92,7 @@ test('v2 to v4 retains nonempty sessions, executions and pending grants with FK 
   db.prepare('UPDATE schema_meta SET version=2 WHERE id=1').run(); db.prepare('UPDATE authority_meta SET schema_version=2 WHERE id=1').run();
   db.close();
   const migrated = createAuthorityStore({ dataDir: dir });
-  assert.equal(migrated.version(), 5);
+  assert.equal(migrated.version(), AUTHORITY_SCHEMA_VERSION);
   assert.equal(migrated.db.prepare("SELECT state FROM client_sessions WHERE id='s'").get().state, 'FINISHED');
   assert.equal(migrated.db.prepare('SELECT count(*) AS n FROM session_executions').get().n, 1);
   assert.equal(migrated.db.prepare('SELECT count(*) AS n FROM relation_pending_grants').get().n, 1);
@@ -120,7 +120,7 @@ COMMIT;
 PRAGMA foreign_keys=ON;`);
   seeded.close();
   const migrated = createAuthorityStore({ dataDir: dir });
-  assert.equal(migrated.version(), 5);
+  assert.equal(migrated.version(), AUTHORITY_SCHEMA_VERSION);
   const share = migrated.db.prepare("SELECT id,relation_id,grant_id,operation_id,projection_json FROM history_shares WHERE id='h'").get();
   assert.equal(share.id, 'h'); assert.equal(share.relation_id, 'r'); assert.equal(share.grant_id, 'g'); assert.equal(share.operation_id, 'operation'); assert.equal(share.projection_json, '[]');
   assert.deepEqual(migrated.db.prepare('PRAGMA foreign_key_check').all(), []);
@@ -152,7 +152,7 @@ test('v4 to v5 preserves nonempty authority rows and assigns a server migration 
   if (columns.includes('eligible_from_utc')) legacy.exec('ALTER TABLE relation_grants DROP COLUMN eligible_from_utc;');
   legacy.exec('PRAGMA foreign_keys=OFF; UPDATE schema_meta SET version=4 WHERE id=1; UPDATE authority_meta SET schema_version=4 WHERE id=1; PRAGMA foreign_keys=ON;'); legacy.close();
   const migrated = createAuthorityStore({ dataDir: dir });
-  assert.equal(migrated.version(), 5);
+  assert.equal(migrated.version(), AUTHORITY_SCHEMA_VERSION);
   const grants = migrated.db.prepare('SELECT id,state,eligible_from_utc FROM relation_grants ORDER BY id').all();
   assert.deepEqual(grants.map(row => [row.id, row.state]), [['g-active-history-a', 'ACTIVE'], ['g-active-history-b', 'ACTIVE'], ['g-active-weight', 'ACTIVE'], ['g-revoked', 'REVOKED']]);
   assert.equal(new Set(grants.map(row => row.eligible_from_utc)).size, 1);

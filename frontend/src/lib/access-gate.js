@@ -29,7 +29,9 @@ function validateAccess(value) {
   if (value.account.activity !== 'ACTIVE') return { ok: false, reason: 'inactive-identity' }
   if (typeof value.managedSubscriptions !== 'boolean' || !Array.isArray(value.roles) || value.roles.some(role => typeof role !== 'string' || !ROLES.has(role)) || !Array.isArray(value.capabilities) || value.capabilities.some(capability => typeof capability !== 'string' || !CAPABILITIES.has(capability)) || !value.entitlement || !isPlain(value.entitlement) || typeof value.entitlement.active !== 'boolean' || !Number.isSafeInteger(value.entitlement.version) || value.entitlement.version < 0 || !value.compatibility || !isPlain(value.compatibility) || value.compatibility.protectedTraining !== 'supported' || typeof value.requestId !== 'string' || value.requestId.length === 0 || !Array.isArray(value.versionTokens) || value.versionTokens.some(token => !isPlain(token) || typeof token.kind !== 'string' || token.kind.length === 0 || typeof token.key !== 'string' || token.key.length === 0 || !Number.isSafeInteger(token.version) || token.version < 0)) return { ok: false, reason: 'malformed-access' }
   const { startUtc, endExclusiveUtc } = value.entitlement
-  if (value.entitlement.active ? !(utc(startUtc) && utc(endExclusiveUtc) && Date.parse(startUtc) < Date.parse(endExclusiveUtc)) : !(startUtc === null && endExclusiveUtc === null)) return { ok: false, reason: 'malformed-access' }
+  const finite = utc(startUtc) && utc(endExclusiveUtc) && Date.parse(startUtc) < Date.parse(endExclusiveUtc)
+  const indefinite = startUtc === null && endExclusiveUtc === null
+  if (value.entitlement.active ? !(finite || indefinite) : !indefinite) return { ok: false, reason: 'malformed-access' }
   if (value.compatibility.protectedTraining !== 'supported') return { ok: false, reason: 'unsupported-client' }
   if (!value.managedSubscriptions) return { ok: true, personal: true }
   if (!value.roles.includes('CLIENT')) return { ok: true, personal: false, reason: 'client-role-required' }

@@ -17,6 +17,7 @@ const countedTables = [
   'relation_grants',
   'relation_pending_grants',
   'subscription_intervals',
+  'indefinite_client_entitlements',
   'commercial_operations',
   'goal_versions',
   'plan_versions',
