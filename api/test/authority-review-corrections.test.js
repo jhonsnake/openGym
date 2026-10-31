@@ -54,10 +54,17 @@ test('review correction: pending unknown acceptance persists exactly its selecte
   service.reserveEnrollment({ token: invitation.result.token, uid: 'new-client', challenge: 'challenge', enrollmentHandle });
   service.completeEnrollment({ uid: 'new-client', challenge: 'challenge', enrollmentHandle });
   const accepted = service.acceptInvitation({ actorId: 'new-client', requestId: 'accept', body: { operationId: op(31), expectedVersion: 1, payload: { token: invitation.result.token, grants: [{ kind: 'PLAN' }] } } });
-  assert.equal(store.db.prepare("SELECT count(*) AS n FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").get(accepted.result.relationId).n, 0);
+  const pendingGrant = store.db.prepare("SELECT id,kind,eligible_from_utc FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").get(accepted.result.relationId);
+  assert.deepEqual({ kind: pendingGrant.kind, eligibleFromUtc: pendingGrant.eligible_from_utc }, { kind: 'PLAN', eligibleFromUtc: stamp });
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM relation_access_windows WHERE relation_id=?').get(accepted.result.relationId).n, 0);
+  assert.deepEqual(service.clientRelations('new-client', { limit: 10, offset: 0 }).relations[0].grants, []);
+  assert.deepEqual(service.clientRelations('new-client', { limit: 10, offset: 0 }).relations[0].pendingProposals, [{ kind: 'PLAN' }]);
+  assert.deepEqual(service.trainerRelations('trainer', { limit: 10, offset: 0 }).relations[0].grants, []);
   const confirmed = service.changeRelation({ actorId: 'trainer', requestId: 'confirm', action: 'confirm', body: { operationId: op(32), expectedVersion: accepted.versionTokens.find(token => token.kind === 'RELATION').version, payload: { relationId: accepted.result.relationId } } });
   assert.equal(confirmed.result.state, 'ACTIVE');
-  assert.deepEqual(store.db.prepare("SELECT kind FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind").all(accepted.result.relationId).map(row => ({ kind: row.kind })), [{ kind: 'PLAN' }]);
+  const confirmedGrant = store.db.prepare("SELECT id,kind,eligible_from_utc FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").get(accepted.result.relationId);
+  assert.deepEqual({ id: confirmedGrant.id, kind: confirmedGrant.kind, eligibleFromUtc: confirmedGrant.eligible_from_utc }, { id: pendingGrant.id, kind: 'PLAN', eligibleFromUtc: stamp });
+  assert.equal(store.db.prepare("SELECT count(*) AS n FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").get(accepted.result.relationId).n, 1);
 });
 
 test('invitation acceptance permits only exact selected proposal subsets', () => {

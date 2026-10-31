@@ -87,8 +87,8 @@ test('T5 HTTP matrix persists authoritative training through restart and enforce
   const expiredClientRelations = await request('GET', '/api/client/relations', 'client-expired');
   assert.equal(expiredClientRelations.status, 200); assert.deepEqual(expiredClientRelations.body.relations.find(item => item.relationId === expiredRelation.result.relationId).trainer, { id: 'trainer' }, 'relation metadata keeps only the owned trainer literal even without current CLIENT entitlement');
   assert.equal((await request('POST', '/api/trainer/plans/publish', 'trainer', mutation(37, { relationId: expiredRelation.result.relationId, exercises: [exercise] }))).status, 403, 'expired client entitlement blocks publication');
-  const emptyHistory = await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer');
-  assert.equal(emptyHistory.status, 200); assert.deepEqual(emptyHistory.body.items, [], 'consent without a published snapshot never reads live personal JSON');
+  const initialHistory = await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer');
+  assert.equal(initialHistory.status, 200); assert.ok(initialHistory.body.items.some(item => item.sourceKind === 'LEGACY_WORKOUT'), 'initial HISTORY consent freezes the existing allowlisted snapshot');
   const grants = await request('POST', '/api/client/relations/grants/replace', 'client', mutation(40, { relationId: relation.result.relationId, grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'HISTORY', startUtc: '2026-01-02T00:00:00.000Z', endExclusiveUtc: historyEnd }] }, relation.versionTokens.find(token => token.kind === 'RELATION').version));
   assert.equal(grants.status, 200, JSON.stringify(grants.body));
   const historyWithoutExecution = await request('GET', `/api/trainer/history?relationId=${relation.result.relationId}`, 'trainer');

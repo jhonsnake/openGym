@@ -41,6 +41,7 @@ import { createAuthorityStore } from './authority-store.js';
 import { createIdentityAuthority } from './identity-authority.js';
 import { createAuthorityService } from './authority-service.js';
 import { createTrainingAuthority } from './authority-training.js';
+import { createHistoryPublisher } from './authority-history.js';
 import { createAuthorityExport } from './authority-export.js';
 
 const PORT = +(process.env.PORT || 3000);
@@ -192,12 +193,14 @@ let authorityStore, authorityService, authorityTraining, authorityExport;
 try {
   authorityStore = createAuthorityStore({ dataDir: DATA });
   const authorityIdentity = createIdentityAuthority({ getUser: uid => db.users.find(user => user.id === uid) || null });
-  authorityService = createAuthorityService({ store: authorityStore, identity: authorityIdentity, isAdmin: uid => isAdmin(db.users.find(user => user.id === uid)), isOwner: uid => isOwner(db.users.find(user => user.id === uid)) });
+  const historyPublisher = createHistoryPublisher({ readStateStrict });
+  authorityService = createAuthorityService({ store: authorityStore, identity: authorityIdentity, historyPublisher, isAdmin: uid => isAdmin(db.users.find(user => user.id === uid)), isOwner: uid => isOwner(db.users.find(user => user.id === uid)) });
   authorityTraining = createTrainingAuthority({
     store: authorityStore,
     service: authorityService,
     identity: authorityIdentity,
     readStateStrict,
+    historyPublisher,
     resolveOwnedCustomExerciseId: (exerciseId, subjectId) => {
       const state = readStateStrict(subjectId);
       return !!state && typeof state === 'object' && Array.isArray(state.customEx)

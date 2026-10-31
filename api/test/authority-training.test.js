@@ -9,12 +9,12 @@ import { createAuthorityService } from '../authority-service.js';
 import { createTrainingAuthority } from '../authority-training.js';
 
 const uid = () => crypto.randomUUID();
-function fixture(t, { state = null } = {}) {
+function fixture(t, { state = null, readStateStrict = () => state } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'authority-training-'));
   const store = createAuthorityStore({ dataDir });
   const people = new Map(['trainer', 'client'].map(id => [id, { id, active: true, activity: 'ACTIVE' }]));
   const service = createAuthorityService({ store, identity: { get: id => people.get(id) } });
-  const training = createTrainingAuthority({ store, service, identity: { get: id => people.get(id) }, readStateStrict: () => state });
+  const training = createTrainingAuthority({ store, service, identity: { get: id => people.get(id) }, readStateStrict });
   const relationId = uid(); const invitationId = uid(); const stamp = new Date().toISOString();
   const db = store.db;
   for (const [account, role] of [['trainer', 'TRAINER'], ['client', 'CLIENT']]) db.prepare('INSERT INTO operational_roles(id,account_id,role,assigned_by,assigned_at_utc,version,reason) VALUES (?,?,?,?,?,?,?)').run(uid(), account, role, 'seed', stamp, 1, 'test');
@@ -144,6 +144,59 @@ test('T5 HISTORY keeps one immutable share per exact non-overlapping grant and f
   ] } };
   assert.throws(() => training.replaceGrants({ actorId: 'client', requestId: 'history-invalid', body: invalid }), /overlap/);
   assert.equal(store.db.prepare("SELECT count(*) AS n FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").get(relationId).n, 4);
+});
+
+test('T5 rejects HISTORY includeWeight unless WEIGHT is independently selected', t => {
+  const { training, relationId } = fixture(t, { state: { _rev: 1, _wid: 'weight-rule', unit: 'kg', workouts: [], bodyweight: [] } });
+  assert.throws(() => training.replaceGrants({ actorId: 'client', requestId: 'weight-rule', body: { operationId: uid(), expectedVersion: 0, payload: { relationId, grants: [{ kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: '2026-02-01T00:00:00.000Z', includeWeight: true }] } } }), /explicit WEIGHT grant/);
+});
+
+test('T5 captures a fresh HISTORY source outside the replace commit and revalidates it inside', t => {
+  const state = { _rev: 1, _wid: 'ordering', unit: 'kg', workouts: [], bodyweight: [], customEx: [] };
+  const sourceReadContexts = [];
+  let inTransaction = false;
+  const { store, training, relationId } = fixture(t, { state, readStateStrict: () => {
+    sourceReadContexts.push(inTransaction ? 'inside' : 'outside');
+    return state;
+  } });
+  const transaction = store.transaction.bind(store);
+  store.transaction = (context, apply) => transaction(context, tx => {
+    inTransaction = true;
+    try { return apply(tx); } finally { inTransaction = false; }
+  });
+  training.replaceGrants({ actorId: 'client', requestId: 'ordering', body: { operationId: uid(), expectedVersion: 0, payload: { relationId, grants: [
+    { kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: '2026-02-01T00:00:00.000Z' }
+  ] } } });
+  assert.deepEqual(sourceReadContexts, ['outside', 'inside']);
+});
+
+test('T5 replace preflight never reads HISTORY for denied, stale, or replayed requests and rolls back a changed source', t => {
+  let reads = 0;
+  let snapshots = [
+    { _rev: 1, _wid: 'before', unit: 'kg', workouts: [], bodyweight: [], customEx: [] },
+    { _rev: 2, _wid: 'changed', unit: 'kg', workouts: [], bodyweight: [], customEx: [] }
+  ];
+  const { store, training, relationId } = fixture(t, { readStateStrict: () => { reads += 1; return snapshots.shift(); } });
+  const grants = [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: '2026-02-01T00:00:00.000Z' }];
+  assert.throws(() => training.replaceGrants({ actorId: 'trainer', requestId: 'denied', body: { operationId: uid(), expectedVersion: 0, payload: { relationId, grants } } }), /forbidden/);
+  assert.equal(reads, 0);
+  assert.throws(() => training.replaceGrants({ actorId: 'client', requestId: 'stale', body: { operationId: uid(), expectedVersion: 1, payload: { relationId, grants } } }), /conflict/);
+  assert.equal(reads, 0);
+  const body = { operationId: uid(), expectedVersion: 0, payload: { relationId, grants } };
+  assert.throws(() => training.replaceGrants({ actorId: 'client', requestId: 'changed-source', body }), /conflict/);
+  assert.equal(reads, 2);
+  assert.deepEqual(store.db.prepare("SELECT kind FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind").all(relationId).map(row => row.kind), ['EXECUTION', 'PLAN']);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM history_shares WHERE relation_id=?').get(relationId).n, 0);
+  assert.equal(store.db.prepare("SELECT count(*) AS n FROM mutation_results WHERE operation_id=?").get(body.operationId).n, 0);
+  snapshots = [
+    { _rev: 3, _wid: 'committed', unit: 'kg', workouts: [], bodyweight: [], customEx: [] },
+    { _rev: 3, _wid: 'committed', unit: 'kg', workouts: [], bodyweight: [], customEx: [] }
+  ];
+  const committed = training.replaceGrants({ actorId: 'client', requestId: 'fresh', body: { ...body, operationId: uid() } });
+  const readCount = reads;
+  const replay = training.replaceGrants({ actorId: 'client', requestId: 'replay', body: { ...body, operationId: committed.operationId } });
+  assert.equal(replay.replayed, true);
+  assert.equal(reads, readCount);
 });
 
 test('T5 grant replacement preserves identical active grants and only snapshots changed HISTORY consent', t => {

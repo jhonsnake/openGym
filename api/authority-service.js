@@ -50,7 +50,7 @@ function replaceRoles(tx, { accountId, roles, reason, actorId, stamp }) {
   for (const role of roles) insert.run(id(), accountId, role, actorId, stamp, 1, reason);
 }
 
-export function createAuthorityService({ store, identity, isAdmin = () => false, isOwner = () => false, clock = now } = {}) {
+export function createAuthorityService({ store, identity, historyPublisher, isAdmin = () => false, isOwner = () => false, clock = now } = {}) {
   if (!store || !identity) throw new TypeError('store and identity are required');
   function requireActive(actorId) { if (!identity.get(actorId)?.active) fail('forbidden'); }
   function requireCapabilityTx(tx, { actorId, subjectId = actorId, capability, relationId, grantKind, withdrawalOnly = false } = {}) {
@@ -125,6 +125,24 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
       tx.recordMutation({ operationId, actorId, capability, subjectId, aggregateKind, aggregateKey: key, payloadSha256, resultEntityType: entity.type, resultEntityId: entity.id, resultVersion: entity.version || token.version, resultMetadata: { result: applied.result, references } });
       tx.audit({ actorId, subjectId: applied.auditSubjectId ?? subjectId, entityType: entity.type, entityId: entity.id, before: applied.before ?? null, after: applied.after ?? applied.result, reason: applied.reason ?? payload.reason ?? null, reference: applied.reference ?? null, requestId });
       return { operationId, entity: { ...entity, version: entity.version || token.version }, versionTokens, result: applied.result, requestId };
+    });
+  }
+  function preflightAuthority({ actorId, capability, subjectId, aggregateKind, aggregateKey, operationId, expectedVersion, payload, requestId, authorityContext }, inspectTx = () => undefined) {
+    const context = freezeAuthorityContext(authorityContext);
+    const payloadRelationId = payload && typeof payload === 'object' ? payload.relationId : undefined;
+    if (payloadRelationId !== undefined && context.relationId !== payloadRelationId) fail('forbidden');
+    const fixedGrantKind = fixedGrantByCapability[capability];
+    if (fixedGrantKind && payload && typeof payload === 'object' && payload.grantKind !== undefined && payload.grantKind !== fixedGrantKind) fail('forbidden');
+    return store.transaction({ actorId, requestId }, tx => {
+      requireCapabilityTx(tx, { actorId, subjectId, capability, relationId: context.relationId, grantKind: context.grantKind, withdrawalOnly: context.withdrawalOnly === true });
+      const payloadSha256 = hashPayload(payload); const key = Array.isArray(aggregateKey) ? canonicalAggregateKey(aggregateKey) : aggregateKey;
+      const replay = tx.mutation(operationId);
+      if (replay) {
+        if (replay.actor_id !== actorId || replay.subject_id !== (subjectId ?? null) || replay.capability !== capability || replay.aggregate_kind !== aggregateKind || replay.aggregate_key !== key || replay.payload_sha256 !== payloadSha256) fail('conflict');
+        return { replayed: true };
+      }
+      if (tx.getAggregateVersion(aggregateKind, key) !== expectedVersion) fail('conflict');
+      return { replayed: false, value: inspectTx(tx) };
     });
   }
   // `entity.version` is the committed entity version. It is current only for
@@ -249,6 +267,25 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
   }
   function acceptInvitation({ actorId, body, requestId }) {
     const { operationId, expectedVersion, payload } = validateMutationEnvelope(body, 'acceptInvitation');
+    const preflight = store.transaction({ actorId, requestId }, tx => {
+      requireCapabilityTx(tx, { actorId, subjectId: actorId, capability: 'ACCEPT_INVITATION' });
+      const invite = invitationByToken(tx, payload.token);
+      if (!invite || (invite.known_client_id && invite.known_client_id !== actorId)) fail('invite-invalid');
+      const key = canonicalAggregateKey([invite.id]); const replay = tx.mutation(operationId); const payloadSha256 = hashPayload(payload);
+      if (replay) {
+        if (replay.actor_id !== actorId || replay.subject_id !== actorId || replay.capability !== 'ACCEPT_INVITATION' || replay.aggregate_kind !== 'INVITATION' || replay.aggregate_key !== key || replay.payload_sha256 !== payloadSha256) fail('conflict');
+        const stored = JSON.parse(replay.result_metadata_json);
+        const versionTokens = (stored.references ?? [{ kind: 'INVITATION', key }]).map(reference => ({ ...reference, version: tx.getAggregateVersion(reference.kind, reference.key) }));
+        return { operationId, replayed: true, entity: replayEntity(tx, replay, versionTokens), versionTokens, result: stored.result ?? stored, requestId };
+      }
+      invitationForToken(tx, payload.token);
+      const proposals = tx.db.prepare('SELECT * FROM invitation_grants WHERE invitation_id=?').all(invite.id);
+      if (payload.grants.some(selected => !proposals.some(proposal => grantMatches(proposal, selected)))) fail('forbidden');
+      if (tx.getAggregateVersion('INVITATION', key) !== expectedVersion) fail('conflict');
+      return null;
+    });
+    if (preflight) return preflight;
+    const snapshot = historyPublisher?.prepare(actorId, payload.grants.some(grant => grant.kind === 'HISTORY'));
     return store.transaction({ actorId, requestId }, tx => {
       requireCapabilityTx(tx, { actorId, subjectId: actorId, capability: 'ACCEPT_INVITATION' });
       const invite = invitationByToken(tx, payload.token);
@@ -275,10 +312,10 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
         tx.db.prepare('INSERT INTO relations(id,trainer_id,client_id,invitation_id,state,accepted_at_utc,confirmed_at_utc,version) VALUES (?,?,?,?,?,?,?,1)').run(relationId, invite.trainer_id, actorId, invite.id, known ? 'ACTIVE' : 'PENDING_CONFIRMATION', stamp, known ? stamp : null);
         if (known) tx.db.prepare('INSERT INTO relation_access_windows(id,relation_id,eligible_from_utc,enabled_from_utc,reason,version) VALUES (?,?,?,?,?,1)').run(id(), relationId, stamp, stamp, 'initial acceptance');
         const insert = tx.db.prepare('INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,window_end_exclusive_utc,include_weight,granted_by,eligible_from_utc,version) VALUES (?,?,?,\'ACTIVE\',?,?,?,?,?,1)');
-        if (known) for (const grant of payload.grants) insert.run(id(), relationId, grant.kind, grant.startUtc ?? null, grant.endExclusiveUtc ?? null, grant.includeWeight ? 1 : 0, actorId, stamp);
-        else {
-          const pending = tx.db.prepare('INSERT INTO relation_pending_grants(id,relation_id,kind,window_start_utc,window_end_exclusive_utc,include_weight,consented_at_utc,version) VALUES (?,?,?,?,?,?,?,1)');
-          for (const grant of payload.grants) pending.run(id(), relationId, grant.kind, grant.startUtc ?? null, grant.endExclusiveUtc ?? null, grant.includeWeight ? 1 : 0, stamp);
+        const created = payload.grants.map(grant => { const grantId = id(); insert.run(grantId, relationId, grant.kind, grant.startUtc ?? null, grant.endExclusiveUtc ?? null, grant.includeWeight ? 1 : 0, actorId, stamp); return { item: grant, grantId }; });
+        if (created.some(grant => grant.item.kind === 'HISTORY')) {
+          if (!historyPublisher) fail('conflict');
+          historyPublisher.publish(tx, { clientId: actorId, relationId, grants: created.filter(grant => grant.item.kind === 'HISTORY'), selectedGrants: payload.grants, acceptedAt: stamp, operationId, snapshot });
         }
       } catch (error) { if (/UNIQUE constraint failed: relations\.client_id/.test(error.message)) fail('conflict'); throw error; }
       const token = tx.bumpAggregate('INVITATION', key);
@@ -328,10 +365,13 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
         try {
           tx.db.prepare("UPDATE relations SET state='ACTIVE',confirmed_at_utc=?,version=version+1 WHERE id=?").run(stamp, relationId);
           tx.db.prepare('INSERT INTO relation_access_windows(id,relation_id,eligible_from_utc,enabled_from_utc,reason,version) VALUES (?,?,?,?,?,1)').run(id(), relationId, relation.accepted_at_utc, stamp, 'trainer confirmation');
-          const pending = tx.db.prepare('SELECT * FROM relation_pending_grants WHERE relation_id=?').all(relationId);
-          const insert = tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,window_end_exclusive_utc,include_weight,granted_by,eligible_from_utc,version) VALUES (?,?,?,'ACTIVE',?,?,?,?,?,1)");
-          for (const grant of pending) insert.run(id(), relationId, grant.kind, grant.window_start_utc, grant.window_end_exclusive_utc, grant.include_weight, relation.client_id, stamp);
-          tx.db.prepare('DELETE FROM relation_pending_grants WHERE relation_id=?').run(relationId);
+          const active = tx.db.prepare("SELECT 1 FROM relation_grants WHERE relation_id=? AND state='ACTIVE' LIMIT 1").get(relationId);
+          if (!active) {
+            const pending = tx.db.prepare('SELECT * FROM relation_pending_grants WHERE relation_id=?').all(relationId);
+            const insert = tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,window_end_exclusive_utc,include_weight,granted_by,eligible_from_utc,version) VALUES (?,?,?,'ACTIVE',?,?,?,?,?,1)");
+            for (const grant of pending) insert.run(id(), relationId, grant.kind, grant.window_start_utc, grant.window_end_exclusive_utc, grant.include_weight, relation.client_id, relation.accepted_at_utc);
+            tx.db.prepare('DELETE FROM relation_pending_grants WHERE relation_id=?').run(relationId);
+          }
         }
         catch (error) { if (/UNIQUE constraint failed: relations\.client_id/.test(error.message)) fail('conflict'); throw error; }
       } else if (action === 'suspend') {
@@ -437,7 +477,7 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
         relationId: row.id,
         clientAlias: row.commercial_name,
         state: row.state,
-        grants: tx.db.prepare('SELECT * FROM relation_grants WHERE relation_id=? ORDER BY kind,window_start_utc,id').all(row.id).map(grant => ({
+        grants: row.state === 'PENDING_CONFIRMATION' ? [] : tx.db.prepare('SELECT * FROM relation_grants WHERE relation_id=? ORDER BY kind,window_start_utc,id').all(row.id).map(grant => ({
           grantId: grant.id,
           kind: grant.kind,
           state: grant.state,
@@ -464,9 +504,9 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
         acceptedAt: row.accepted_at_utc,
         confirmedAt: row.confirmed_at_utc,
         endedAt: row.ended_at_utc,
-        grants: consentShape(tx.db.prepare("SELECT * FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind").all(row.id)),
+        grants: row.state === 'PENDING_CONFIRMATION' ? [] : consentShape(tx.db.prepare("SELECT * FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind").all(row.id)),
         pendingProposals: row.state === 'PENDING_CONFIRMATION'
-          ? consentShape(tx.db.prepare('SELECT kind,window_start_utc,window_end_exclusive_utc,include_weight FROM relation_pending_grants WHERE relation_id=? ORDER BY kind,window_start_utc,id').all(row.id))
+          ? consentShape(tx.db.prepare("SELECT kind,window_start_utc,window_end_exclusive_utc,include_weight FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind,window_start_utc,id").all(row.id).length ? tx.db.prepare("SELECT kind,window_start_utc,window_end_exclusive_utc,include_weight FROM relation_grants WHERE relation_id=? AND state='ACTIVE' ORDER BY kind,window_start_utc,id").all(row.id) : tx.db.prepare('SELECT kind,window_start_utc,window_end_exclusive_utc,include_weight FROM relation_pending_grants WHERE relation_id=? ORDER BY kind,window_start_utc,id').all(row.id))
           : [],
         version: tx.getAggregateVersion('RELATION', [row.id])
       }));
@@ -574,7 +614,7 @@ export function createAuthorityService({ store, identity, isAdmin = () => false,
     return { account: { id: actorId, activity: identityRow.activity }, managedSubscriptions, roles, entitlement: { active: !!interval, startUtc: interval?.start_utc ?? null, endExclusiveUtc: interval?.end_exclusive_utc ?? null, version: entitlementVersion }, capabilities: CAPABILITIES.filter(capability), compatibility: { protectedTraining: 'supported' }, requestId, versionTokens: [{ kind: 'ROLES', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('ROLES', canonicalAggregateKey([actorId])) }, { kind: 'SUBSCRIPTION', key: canonicalAggregateKey([actorId]), version: entitlementVersion }, { kind: 'EXPORT_SET', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('EXPORT_SET', canonicalAggregateKey([actorId])) }, { kind: 'DELETION_REQUEST_SET', key: canonicalAggregateKey([actorId]), version: store.getAggregateVersion('DELETION_REQUEST_SET', canonicalAggregateKey([actorId])) }] };
   }
   return {
-    requireCapabilityTx, mutateAuthority, setRoles, setScope, bootstrapOffline, accessSnapshot,
+    requireCapabilityTx, mutateAuthority, preflightAuthority, setRoles, setScope, bootstrapOffline, accessSnapshot,
     createInvitation, replaceInvitation, previewInvitation, acceptInvitation, invitationDecision, changeRelation,
     replaceGrants, revokeGrant, confirmCommercialOperation, commercialClients, trainerPortfolio,
     trainerRelations, trainerInvitations, clientRelations, scopePairs, reserveEnrollment, verifyEnrollment, completeEnrollment, enrollmentMetadata, recoverEnrollmentIdentity

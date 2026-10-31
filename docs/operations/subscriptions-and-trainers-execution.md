@@ -1,6 +1,12 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: correcciones HISTORY aprobadas y web de aceptación verificada; API completa pendiente
+## Corte vigente: API816 y revisión aprobadas; preparar imagen e integración final
+
+Suite API corregida REAL:816/816PASS,0FAIL/0SKIP/0canceladas,EXIT0. Coordinador verificó los192SHA256: ningún archivo cambió durante el gate. Revisión independiente fix-only aprobada sin hallazgos,44focales y5pruebas de portabilidad ya verdes. Evidencia durable: /home/jhonsnake/.local/state/opengym-mvp/evidence/history-corrections-and-web-bf07/api816-coordinator-verified.json. Se publica esta fuente API junto con documentación HTML generada que pasa --check; publicación no equivale a despliegue.
+
+Siguiente: construir imagen API con revisión pública exacta y comprobar bytes/arranque, repetir clínica desktop/móvil y4T9 sobre esa imagen. Frontendbf07/full6705 y web de aceptación7c14/media13109/CSP ya verificados, pero la imagen final debe conservar los chunks del baseline de producción inspeccionado. Restore integral continúa sin consentimiento específico; no reintento ni vía alternativa. Producción y roles nominales intactos.
+
+### Histórico del corte API completa pendiente
 
 Corrector232 terminó. Coordinador ejecutó44/44pruebas focalizadas,0FAIL/0SKIP/0canceladas,EXIT0, incluidos ambos checks de empaquetado. Revisión independiente fix-only proc_d24ffa11c69e APROBADA: IHC001–005 resueltos, sin seguridad/lógica/sugerencias pendientes. Sus19hashes de código y evidencia se comprobaron contra los archivos reales. Código API sin escritores; no interpretar el full810 anterior como verde.
 

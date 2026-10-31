@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { canonicalAggregateKey, hashPayload, parseAuthorityPayload, validateMutationEnvelope } from './authority-contract.js';
-import { composeHistoryShare, filterHistoryShareForCurrentGrants, projectLegacyBodyweight } from './authority-projections.js';
+import { filterHistoryShareForCurrentGrants, projectLegacyBodyweight } from './authority-projections.js';
+import { createHistoryPublisher } from './authority-history.js';
 import { exerciseResolver } from './exercise-catalogue.js';
 
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
@@ -11,7 +12,6 @@ const activeWindow = (db, relationId, at) => db.prepare("SELECT * FROM relation_
 const activeSessionWindow = (db, session, at) => db.prepare("SELECT * FROM relation_access_windows WHERE id=? AND relation_id=? AND enabled_from_utc<=? AND (ended_at_utc IS NULL OR ended_at_utc>?)").get(session.access_window_id, session.relation_id, session.server_started_at_utc, at);
 const relation = (db, relationId) => db.prepare('SELECT * FROM relations WHERE id=?').get(relationId);
 const entitled = (db, clientId, at) => !!db.prepare('SELECT 1 FROM subscription_intervals WHERE client_id=? AND start_utc<=? AND end_exclusive_utc>?').get(clientId, at, at);
-const equalSnapshotIdentity = (a, b) => (a?._rev ?? 0) === (b?._rev ?? 0) && (a?._wid ?? null) === (b?._wid ?? null);
 
 function localPage({ rows, cursor, limit = 25 }) {
   const n = Number(limit); if (!Number.isInteger(n) || n < 1 || n > 100) fail('validation-error');
@@ -25,8 +25,9 @@ function snapshotEntries(plan) {
   return new Map(plan.exercises.map(entry => [entry.entryId, entry]));
 }
 
-export function createTrainingAuthority({ store, service, identity, readStateStrict, clock = iso, resolveOwnedCustomExerciseId, pageCodec } = {}) {
+export function createTrainingAuthority({ store, service, identity, readStateStrict, historyPublisher, clock = iso, resolveOwnedCustomExerciseId, pageCodec } = {}) {
   if (!store || !service || !identity || typeof readStateStrict !== 'function') throw new TypeError('training authority dependencies are required');
+  const publisher = historyPublisher ?? createHistoryPublisher({ readStateStrict });
   const resolver = resolveOwnedCustomExerciseId ? ((value, ctx) => exerciseResolver(value, ctx) || (resolveOwnedCustomExerciseId(value, ctx.subjectId) === true ? { kind: 'custom', ownerId: ctx.subjectId } : null)) : exerciseResolver;
   const optionsFor = subjectId => ({ clock: () => new Date(clock()), exerciseResolver: resolver, subjectId });
   const page = pageCodec || (({ rows, cursor, limit }) => localPage({ rows, cursor, limit }));
@@ -209,10 +210,19 @@ export function createTrainingAuthority({ store, service, identity, readStateStr
 
   function replaceGrants({ actorId, body, requestId }) {
     const initial = validateMutationEnvelope(body, 'grant');
-    return service.mutateAuthority({ actorId, capability: 'CHANGE_GRANT', subjectId: actorId, aggregateKind: 'RELATION', aggregateKey: [initial.payload.relationId], operationId: initial.operationId, expectedVersion: initial.expectedVersion, payload: initial.payload, requestId, authorityContext: { relationId: initial.payload.relationId } }, tx => {
+    const authority = { actorId, capability: 'CHANGE_GRANT', subjectId: actorId, aggregateKind: 'RELATION', aggregateKey: [initial.payload.relationId], operationId: initial.operationId, expectedVersion: initial.expectedVersion, payload: initial.payload, requestId, authorityContext: { relationId: initial.payload.relationId } };
+    const identity = item => `${item.kind}\u0000${item.startUtc ?? item.window_start_utc ?? ''}\u0000${item.endExclusiveUtc ?? item.window_end_exclusive_utc ?? ''}\u0000${item.kind === 'HISTORY' ? (item.includeWeight === true || item.include_weight === 1 ? 1 : 0) : 0}`;
+    const preflight = service.preflightAuthority(authority, tx => {
       const r = relation(tx.db, initial.payload.relationId); if (!r || r.client_id !== actorId) fail('not-found');
       const active = tx.db.prepare("SELECT * FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").all(r.id);
-      const identity = item => `${item.kind}\u0000${item.startUtc ?? item.window_start_utc ?? ''}\u0000${item.endExclusiveUtc ?? item.window_end_exclusive_utc ?? ''}\u0000${item.kind === 'HISTORY' ? (item.includeWeight === true || item.include_weight === 1 ? 1 : 0) : 0}`;
+      const current = new Map(active.map(item => [identity(item), item]));
+      return { captureHistory: initial.payload.grants.some(item => item.kind === 'HISTORY' && !current.has(identity(item))) };
+    });
+    if (preflight.replayed) return service.mutateAuthority(authority, () => { fail('conflict'); });
+    const snapshot = publisher.prepare(actorId, preflight.value.captureHistory);
+    return service.mutateAuthority(authority, tx => {
+      const r = relation(tx.db, initial.payload.relationId); if (!r || r.client_id !== actorId) fail('not-found');
+      const active = tx.db.prepare("SELECT * FROM relation_grants WHERE relation_id=? AND state='ACTIVE'").all(r.id);
       const desired = new Map(initial.payload.grants.map(item => [identity(item), item]));
       const current = new Map(active.map(item => [identity(item), item]));
       const unchanged = new Set([...desired.keys()].filter(key => current.has(key)));
@@ -223,13 +233,7 @@ export function createTrainingAuthority({ store, service, identity, readStateStr
       }
       const insert = tx.db.prepare("INSERT INTO relation_grants(id,relation_id,kind,state,window_start_utc,window_end_exclusive_utc,include_weight,granted_by,eligible_from_utc,version) VALUES (?,? ,?,'ACTIVE',?,?,?,?,?,1)");
       const created = initial.payload.grants.filter(item => !unchanged.has(identity(item))).map(item => { const grantId = id(); insert.run(grantId, r.id, item.kind, item.startUtc ?? null, item.endExclusiveUtc ?? null, item.includeWeight === true ? 1 : 0, actorId, stamp); return { item, grantId }; });
-      const initialState = changedHistory.length ? readStateStrict(actorId) : null;
-      const currentState = changedHistory.length ? readStateStrict(actorId) : null;
-      if (changedHistory.length && (!initialState || typeof initialState !== 'object' || !currentState || typeof currentState !== 'object' || !equalSnapshotIdentity(initialState, currentState))) fail('conflict');
-      for (const { item, grantId } of created.filter(createdGrant => createdGrant.item.kind === 'HISTORY')) {
-        const share = composeHistoryShare({ workouts: currentState.workouts, bodyweight: currentState.bodyweight, profileUnit: currentState.unit, legacyRevision: currentState._rev ?? 0, legacyWid: currentState._wid ?? null, sqliteRows: tx.db.prepare('SELECT id,payload_json AS payloadJson,submitted_at_utc AS submittedAtUtc FROM session_executions WHERE client_id=?').all(actorId), sqliteBodyweightRows: tx.db.prepare('SELECT id,weight,unit,reported_date_panama AS reportedDatePanama,received_at_utc AS receivedAtUtc FROM bodyweight_entries WHERE client_id=?').all(actorId), fromUtc: item.startUtc, toExclusiveUtc: item.endExclusiveUtc, consentAtUtc: stamp, serverNowUtc: stamp, includeWeight: item.includeWeight === true, weightAllowed: initial.payload.grants.some(grantItem => grantItem.kind === 'WEIGHT') });
-        const shareId = id(); tx.db.prepare('INSERT INTO history_shares(id,client_id,relation_id,grant_id,from_utc,to_exclusive_utc,source_personal_rev,source_personal_wid,source_sqlite_version,projection_json,projection_sha256,published_at_utc,operation_id,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)').run(shareId, actorId, r.id, grantId, item.startUtc, item.endExclusiveUtc, String(currentState._rev ?? 0), currentState._wid ?? null, tx.getAggregateVersion('SESSION_SET', [actorId]), JSON.stringify(share), hashPayload(share), stamp, initial.operationId);
-      }
+      publisher.publish(tx, { clientId: actorId, relationId: r.id, grants: created.filter(createdGrant => createdGrant.item.kind === 'HISTORY'), selectedGrants: initial.payload.grants, acceptedAt: stamp, operationId: initial.operationId, snapshot });
       return { entity: { type: 'relation', id: r.id }, result: { relationId: r.id, grants: initial.payload.grants } };
     });
   }

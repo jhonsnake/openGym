@@ -3487,7 +3487,7 @@ paths:
   /api/client/relations/grants/replace:
     post:
       tags: [auth]
-      summary: Client replaces active sharing grants. HISTORY projection is intentionally not yet available.
+      summary: Client replaces active sharing grants; a newly selected HISTORY grant atomically freezes its allowlisted projection at consent.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GrantReplaceMutation' } } } }
       responses: { '200': { description: Relation grant readback, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }, '400': { $ref: '#/components/responses/AuthorityValidation' }, '401': { $ref: '#/components/responses/AuthorityUnauthenticated' }, '403': { $ref: '#/components/responses/AuthorityForbidden' }, '404': { $ref: '#/components/responses/AuthorityNotFound' }, '409': { $ref: '#/components/responses/AuthorityConflict' }, '422': { $ref: '#/components/responses/AuthorityUnprocessable' } }
   /api/client/relations/grants/revoke:

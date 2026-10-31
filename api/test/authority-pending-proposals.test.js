@@ -8,10 +8,11 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createAuthorityStore } from '../authority-store.js';
 import { createAuthorityService } from '../authority-service.js';
+import { createHistoryPublisher } from '../authority-history.js';
 import { boundPort } from './helpers.mjs';
 
 const apiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const stamp = '2027-01-15T12:00:00.000Z';
+const stamp = '2027-03-15T12:00:00.000Z';
 const op = n => `123e4567-e89b-42d3-a456-426614178${String(n).padStart(3, '0')}`;
 const historyWithWeight = { kind: 'HISTORY', startUtc: '2027-01-01T00:00:00.000Z', endExclusiveUtc: '2027-02-01T00:00:00.000Z', includeWeight: true };
 const historyWithoutWeight = { kind: 'HISTORY', startUtc: '2027-02-01T00:00:00.000Z', endExclusiveUtc: '2027-03-01T00:00:00.000Z' };
@@ -22,16 +23,18 @@ function fixture() {
   fs.writeFileSync(path.join(dataDir, 'secret'), 'pending-proposals-test-secret');
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: users.map(id => ({ id, name: id, ...(id === 'admin' ? { admin: true, owner: true } : {}) })), creds: [], subs: [], invites: [] }));
   const active = new Set(users);
+  let historyReads = 0;
   const store = createAuthorityStore({ dataDir });
   const service = createAuthorityService({
     store,
     clock: () => stamp,
+    historyPublisher: createHistoryPublisher({ readStateStrict: () => { historyReads += 1; return { _rev: 1, _wid: 'pending-fixture', unit: 'kg', workouts: [], bodyweight: [] }; } }),
     identity: { get: uid => ({ uid, active: active.has(uid), activity: active.has(uid) ? 'ACTIVE' : 'UNKNOWN' }) },
     isAdmin: uid => uid === 'admin'
   });
   service.setRoles({ actorId: 'admin', body: { operationId: op(1), expectedVersion: 0, payload: { accountId: 'trainer', roles: ['TRAINER'], reason: 'synthetic fixture' } } });
   service.setRoles({ actorId: 'admin', body: { operationId: op(2), expectedVersion: 0, payload: { accountId: 'coordinator', roles: ['COORDINATOR'], reason: 'synthetic fixture' } } });
-  return { dataDir, store, service };
+  return { dataDir, store, service, historyReads: () => historyReads };
 }
 
 function acceptFreshInvitation(service, { uid, sequence, selected }) {
@@ -49,11 +52,13 @@ function acceptFreshInvitation(service, { uid, sequence, selected }) {
 }
 
 test('clientRelations projects only the fresh client pending subset and clears it after confirmation', t => {
-  const { dataDir, store, service } = fixture();
+  const { dataDir, store, service, historyReads } = fixture();
   t.after(() => { store.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
   const selected = [historyWithWeight, historyWithoutWeight, { kind: 'WEIGHT' }];
   const accepted = acceptFreshInvitation(service, { uid: 'fresh-client', sequence: 10, selected });
   assert.equal(accepted.result.state, 'PENDING_CONFIRMATION');
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM history_shares WHERE relation_id=?').get(accepted.result.relationId).n, 2, 'pending acceptance freezes each exact selected HISTORY grant');
+  assert.equal(historyReads(), 2, 'acceptance reads the source once to preflight and once to revalidate');
 
   const pendingPage = service.clientRelations('fresh-client', { limit: 1, offset: 0 });
   assert.equal(pendingPage.hasMore, false);
@@ -70,6 +75,8 @@ test('clientRelations projects only the fresh client pending subset and clears i
   }]);
 
   const confirmed = service.changeRelation({ actorId: 'trainer', action: 'confirm', body: { operationId: op(12), expectedVersion: accepted.entity.version, payload: { relationId: accepted.result.relationId } } });
+  assert.equal(historyReads(), 2, 'confirmation only enables the existing frozen grants');
+  assert.equal(store.db.prepare("SELECT count(*) AS n FROM relation_grants WHERE relation_id=? AND kind='HISTORY' AND eligible_from_utc=?").get(accepted.result.relationId, stamp).n, 2);
   const active = service.clientRelations('fresh-client', { limit: 1, offset: 0 });
   assert.deepEqual(active.relations[0].pendingProposals, []);
   assert.deepEqual(active.relations[0].grants, selected);
@@ -117,4 +124,41 @@ test('HTTP own-client relations readback preserves pending proposals and rejects
   assert.deepEqual((await get('coordinator')).body.relations, []);
   assert.deepEqual((await get('admin')).body.relations, []);
   assert.equal((await get('other-client', '?clientId=fresh-client')).status, 400);
+});
+
+test('unknown HISTORY consent keeps accepted eligibility, enables only at later confirmation, and never recaptures a private update', t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'authority-pending-timestamps-'));
+  const store = createAuthorityStore({ dataDir });
+  const active = new Set(['admin', 'trainer', 'new-client']);
+  const acceptedAt = '2027-03-15T12:00:00.000Z'; const confirmedAt = '2027-03-16T12:00:00.000Z';
+  let now = acceptedAt;
+  let source = { _rev: 1, _wid: 'accepted', unit: 'kg', workouts: [{ id: 'accepted-workout', d: '2027-02-01', entries: [{ id: '0025', sets: [{ done: true, r: 8 }] }] }], bodyweight: [] };
+  let sourceReads = 0;
+  const service = createAuthorityService({
+    store,
+    clock: () => now,
+    identity: { get: uid => ({ uid, active: active.has(uid), activity: active.has(uid) ? 'ACTIVE' : 'UNKNOWN' }) },
+    isAdmin: uid => uid === 'admin',
+    historyPublisher: createHistoryPublisher({ readStateStrict: () => { sourceReads += 1; return source; } })
+  });
+  t.after(() => { store.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  service.setRoles({ actorId: 'admin', body: { operationId: op(800), expectedVersion: 0, payload: { accountId: 'trainer', roles: ['TRAINER'], reason: 'fixture' } } });
+  const invitation = service.createInvitation({ actorId: 'trainer', body: { operationId: op(801), expectedVersion: 0, payload: { commercialName: 'New client', grants: [historyWithoutWeight] } } });
+  service.reserveEnrollment({ token: invitation.result.token, uid: 'new-client', challenge: 'challenge', enrollmentHandle: 'Z'.repeat(43) });
+  service.completeEnrollment({ uid: 'new-client', challenge: 'challenge', enrollmentHandle: 'Z'.repeat(43) });
+  const accepted = service.acceptInvitation({ actorId: 'new-client', body: { operationId: op(802), expectedVersion: invitation.entity.version, payload: { token: invitation.result.token, grants: [historyWithoutWeight] } } });
+  assert.equal(accepted.result.state, 'PENDING_CONFIRMATION');
+  assert.equal(sourceReads, 2);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM relation_access_windows WHERE relation_id=?').get(accepted.result.relationId).n, 0);
+  source = { ...source, _rev: 2, _wid: 'private-after-accept', workouts: [...source.workouts, { id: 'private-after-accept', d: '2027-02-02', entries: [{ id: '0025', sets: [{ done: true, r: 9 }] }] }] };
+  now = confirmedAt;
+  service.changeRelation({ actorId: 'trainer', action: 'confirm', body: { operationId: op(803), expectedVersion: accepted.entity.version, payload: { relationId: accepted.result.relationId } } });
+  const window = store.db.prepare('SELECT eligible_from_utc,enabled_from_utc FROM relation_access_windows WHERE relation_id=?').get(accepted.result.relationId);
+  const grant = store.db.prepare("SELECT eligible_from_utc FROM relation_grants WHERE relation_id=? AND kind='HISTORY'").get(accepted.result.relationId);
+  const share = JSON.parse(store.db.prepare('SELECT projection_json FROM history_shares WHERE relation_id=?').get(accepted.result.relationId).projection_json);
+  assert.equal(window.eligible_from_utc, acceptedAt);
+  assert.equal(window.enabled_from_utc, confirmedAt);
+  assert.equal(grant.eligible_from_utc, acceptedAt);
+  assert.equal(sourceReads, 2, 'confirmation only enables the frozen share');
+  assert.deepEqual(share.records.map(record => record.sourceRecordId), ['accepted-workout']);
 });
