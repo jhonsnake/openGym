@@ -106,7 +106,7 @@ async function prepareClinicalFixture(apiOrigin, secret, ids) {
   await mutate('/api/admin/operations/roles', ids.admin, { accountId: ids['clinical-unrelated'], roles: ['TRAINER'], reason: 'clinical acceptance fixture' })
   await mutate('/api/admin/operations/scopes', ids.admin, { coordinatorId: ids.coordinator, clientId: ids['clinical-client'], assigned: true, reason: 'clinical acceptance fixture' })
   await mutate('/api/admin/commercial/operations/confirm', ids.coordinator, { clientId: ids['clinical-client'], kind: 'MONTHLY', reference: 'clinical-fixture', reason: 'clinical acceptance fixture' })
-  const history = { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: '2030-01-01T00:00:00.000Z', includeWeight: true }
+  const history = { kind: 'HISTORY', startUtc: '2026-01-01T00:00:00.000Z', endExclusiveUtc: new Date().toISOString(), includeWeight: true }
   const invitation = await mutate('/api/trainer/invitations', ids['clinical-trainer'], { knownClientId: ids['clinical-client'], commercialName: 'clinical-fixture', grants: [{ kind: 'PLAN' }, { kind: 'EXECUTION' }, { kind: 'WEIGHT' }, history] })
   const invitationVersion = invitation?.versionTokens?.find(token => token?.kind === 'INVITATION')?.version
   const invitationToken = invitation?.result?.token

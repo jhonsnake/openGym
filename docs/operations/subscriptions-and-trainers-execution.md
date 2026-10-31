@@ -1,6 +1,20 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: defecto inicial de HISTORY confirmado; corrección atómica en ejecución
+## Corte vigente: frontend publicado; HISTORY corregido con prueba real, revisión y API completa pendientes
+
+Fuente funcional frontend publicada en bf07b6ae69563d688364eb475fe66b2e2ab53672, rama feat/subscriptions-human-trainers; remoto leído y coincidente. Acceso anónimo HTTP200 a managed-bridge.js/index.html/webDocker del commit, con SHA256 idénticos. Suite completa20: 6705/6705 aprobadas,565archivos,EXIT0,21308hashes intactos. Handoff anterior publicado c7bf7215eed339a489c8407c9faa6f970b6bfa7f. No despliegue MVP ni roles/suscripciones reales.
+
+Corrección API entregada y escritor finalizado. Coordinador ejecutó7archivos/26pruebas:26PASS,0FAIL/0SKIP/0canceladas,EXIT0. Además repitió HTTP+SQLite reales: aceptación conocida crea1snapshot/2registros; aceptación nueva crea1snapshot mientras PENDING, lectura403; una escritura privada posterior no entra al confirmar (siguen2registros), sin recaptura. Eligibility de grant/ventana coincide conacceptedAt y enablement conconfirmedAt, comprobados contra SQLite. Control exactsubset/unchanged/revoke/regrant permanece correcto. Sin migración ni backfill ni acceso a producción.
+
+Revisión independiente de9archivos API ligada a hashes/diff: proc_994e489e18d9 activo, initial-history-consent-review-{brief.txt,result.txt,log} y initial-history-consent-review.{json,md,diff}; no veredicto consumido todavía. API completa proc_ccc2c8ffbd9d activa con192 archivos API sellados, env-uCOACH_DISABLED y adaptadorTCPloopback/sóloUnixadministrativoprivado. Log coordinator-api-initial-history-full.log, manifiesto coordinator-api-history-full-manifest.json. Wait120 agotado con notificación activa: NO volver a esperar/pollear; seguir trabajo independiente o ceder hasta notificación. Código API sin escritores, protegido frente a cambios mientras corren gates.
+
+Único cambio frontend posterior al full20: fixture clínica corregida de fecha histórica futura2030 a fin UTC calculado ANTESdeaceptar. Compositor real comprobado: rechaza2030 y admite límite actual preconsentimiento. No clipping de permisos ni segunda concesión que oculte el defecto; sólo propuesta sintética válida. Node9/9 y Vitest9/9 de contratos del runner aprobados. Runtime321 archivos de producción sin cambios respecto de fuente frontend publicada y gate20; no declarar full sobre la nueva línea QA sin identificarla.
+
+Evidencia durable nueva: /home/jhonsnake/.local/state/opengym-mvp/evidence/initial-history-consent-fix/manifest.json (7archivos SHA256). Contiene informe de entrega,26focales propios, prueba HTTP/SQLite propia, Node/Vitest del runner y binding de revisión. Aún NO incluye aprobación de revisión/fullAPI/imagen/nueva clínica.
+
+Siguiente: consumir ambos gates actuales; adjudicar hallazgos con contrato y prueba real; tras aprobación publicarAPI, construir nueva imagen y repetir clínica original desktop/móvil y4T9 con ella. Validar imagen web final fuenteVCS/medios/CSP y conservar chunks anteriores. Base local personal cfc77e58d8ea87962b23b820ad694388cf1568551f2cc67a3d02829665dc6f69; imagen producción7b967NOdisponiblelocal, no suponer continuidad de sus chunks. Restore integral sigue bloqueado sin consentimiento específico, no reintento/vía alternativa. Fuente publicada y handoff no completan el despliegue.
+
+### Histórico del corte defecto confirmado y corrección en ejecución
 
 Estado del MVP: NO desplegado. Producción conserva JohnGym y autenticación existente; no se han asignado roles ni suscripciones nominales.
 
