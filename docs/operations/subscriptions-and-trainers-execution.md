@@ -1,6 +1,14 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: imagen API807 verificada; frontend v4 rojo y correcciones acotadas
+## Corte vigente: API807 y correcciones frontend aprobadas; full v5 y T9 bajo ejecución
+
+La revisión fix-only frontend-fix-review-v5.json terminó TRUE: security_concerns/logic_errors/suggestions vacíos. El padre comprobó sus889hashes contra bundle, Root y nuevo snapshot completo frontend-acceptance-v5; todos iguales. Cierra LOG01/08–12 y gramática web sin reabrir guardas. No equivale a full/T9/release. Build real con managedHint1/media1 pasó; se calcularon hashes NgDL y QOi del index compilado y ambos coinciden con DockerCSP. Nuevo snapshot completo v5 basebc18d3dc252e33f9e86e880339270a4030c580bd,21122fuentes/1234frontend, captura código corregido y auxiliares: full proc_48bd8e0cf116 en ejecución, coordinator-frontend-acceptance-v5.{json,log}, sin resultado aún.
+
+El diagnóstico proc_78a91627c867 terminó y sus datos reales fueron leídos: login por contraseña funciona, POST200, cookie presente, GETme200/UID correcto/heading y flow de invitación presentes. El label anterior PASSWORD_LOGIN_RETURN era engañoso por timeout GLOBAL180s posterior y checkpoint desactualizado, NO defecto de autenticación. Runtime-after-timeout-fix conserva evidencia bajo t9-password-diagnostic. Nuevo proc_b2792455ef25 t9-post-password-diagnostic-* posee sólo harness/spec/config: pasos posteriores con causa y tiempos acotados, actualapp v5 en copia propia, sin modificar login ni relajar contratos. Este resultado positivo es login desktop local, no M1 completo, móvil ni producción.
+
+
+
+### Histórico del corte06:39: estados sustituidos por el encabezado vigente
 
 Corte UTC2026-10-31T06:39. Backend publicado c35e792db132d1bf9be807404c939089497f4d04, full807/807PASS/0FAIL/0SKIP y revisión acotada TRUE; esos gates siguen vigentes. Imagen nueva johngym-api:mvp807-acceptance, ID sha256:985a84b56cc0d1c1f4deb52f74f2b37af33f4a2caa4fb4c9108f078a042de8b8: inspección real confirma label c35e792 y bytes de server/service/helper contra API aceptada. Helper empaquetado real, sin overlay/app ni producción, PASS: schema5,22tablas, fila comprometida en WAL y cursor1, SHM presente/ausente, fuente intacta, snapshot standalone íntegro y esquema futuro rechazado. Esto prueba exportación, NO restore integral ni boot restaurado. Evidencias coordinator-api807-image-verified.json y coordinator-api807-packaged-wal.json.
 
