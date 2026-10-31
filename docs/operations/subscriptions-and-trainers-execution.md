@@ -1,5 +1,23 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## Suite API 801 PASS; dos correcciones de integración pendientes
+
+La nueva suite API completa terminó con 801 pruebas aprobadas, 0 fallos y 0 saltos, exit 0. La revisión crítica no aprobó ese snapshot: aunque cerró la brecha WEIGHT original, subconjuntos, migración y DTOs, detectó que replaceGrants también reinicia los grants idénticos y sus cortes. Agregar HISTORY conservando EXECUTION/WEIGHT hizo pasar sus lecturas de 1 registro a 0. No borra los registros propios, pero recorta inesperadamente acceso consentido. Corregir mediante diff transaccional por identidad exacta, conservando IDs, cortes y snapshots de categorías sin cambios; nueva concesión tras retirada debe seguir protegiendo el intervalo privado.
+
+El T9 final sí confirmó roles mediante UI real y quedó bloqueado en GET de ámbitos, no por un recibo inválido. Se identificó la causa en el servidor: la ruta permite filtros coordinatorId/clientId, pero su paginador genérico rechaza esas claves. Corrección acotada para reutilizar el decodificador de cursor tras la whitelist existente, sin relajar otras rutas ni conceder permisos. Ambos cambios tienen archivos exclusivos y nuevos tests; repetir revisión y suite API después de integrarlos.
+
+Frontend: nueva suite completa en ejecución sobre 1229 archivos congelados en repositorio completo, con auxiliares API esquema 5. No fuente cambiante ni fixture parcial. Persisten los gates de journeys M1 con API corregida, restore integral, fuente publicada y activación nominal. Todos los medios personales permanecen; no despliegue MVP ni cambios de roles/suscripciones reales.
+
+## Esquema 5 empaquetado: pruebas acotadas aprobadas, gate integral en curso
+
+La revisión independiente acotada aprobó las tres correcciones de recuperación, con los 187 archivos congelados coincidentes: tokens de sesión recuperables, ventana original y representación explícita de cada ejercicio. No es aprobación global.
+
+Se entregó la corrección de subconjuntos de consentimiento, el límite server-owned eligible_from_utc por grant y la migración 4→5. El mismo oráculo aislado de WEIGHT que antes reproducía el fallo ahora confirma privateGapReturned=false y freshMeasurementVisible=true, sin HISTORY implícito. La revisión crítica de privacidad/migración y la nueva suite completa API están en ejecución; no se acepta todavía el conjunto por los resultados focales.
+
+Verificación operativa directa: 20 pruebas PASS con esquema 5 y SQLite real, transporte Docker simulado. Nueva imagen API intermedia sha256:bf31a9e14234857216e02ded8870ff4945772d4d6283f2aa0f04deb7fb94eda8. Su helper empaquetado real pasó WAL con y sin SHM, fila y cursor conservados, 22 tablas contadas, integridad y rechazo de esquema futuro. Las fuentes DB/WAL/SHM no cambiaron. No hubo código host superpuesto en /app, puertos públicos ni acceso a producción. No equivale al restore integral ni a una imagen final con fuente publicada.
+
+T9 ya muestra el encabezado administrativo y el diagnóstico registra confirmación visible de roles tras HTTP 200, pero la aserción del harness continúa fallando. No se da por probado un defecto del recibo API ni se debilita su validación: falta adjudicar el selector y la evidencia exacta. El resto de los journeys M1 sigue sin aceptar. Todos los medios personales permanecen y el MVP no está desplegado.
+
 ## Corte vigente: recuperación entregada, consentimiento y navegador bajo corrección
 
 Los bloques inferiores son históricos frente a este corte. La recuperación incorporó tokens SESSION/SESSION_SET, vínculo a la ventana original, metadatos mínimos close-only y omisiones explícitas. Su revisión independiente acotada, sobre 187 archivos congelados, está en curso. La suite completa API terminó con 799 pruebas: 797 PASS, 2 FAIL y 0 SKIP. No se acepta como verde: los dos fallos corresponden a una regresión T7 que exige TODOS los grants propuestos al aceptar una invitación, en vez de respetar un subconjunto elegido explícitamente. Se corrige junto con el límite duradero de WEIGHT por periodo/categoría, manteniendo la coincidencia exacta de cada propuesta seleccionada, los registros privados y HISTORY expresamente consentido. No se añade ningún grant ni se concede peso implícitamente.
