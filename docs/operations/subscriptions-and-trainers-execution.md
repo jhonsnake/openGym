@@ -1,6 +1,16 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: cuatro T9 reales aprobados; clínica avanza hasta acceso cliente y full12 activo
+## Corte vigente: full12 real6692 aprobado; contrato de transporte frontend en corrección
+
+Full12 REAL6692/6692PASS,0FAIL/0pending,565archivos sin fallos,JSONsuccessTRUE yEXIT0. Coordinador parseóresultadofinalyverificó21124hashesinmutablessindiferencias; coordinator-frontend-acceptance-v12-verified.json. IncluyeTrainerStrictfix, peroPRECEDE a correccióntransporteabajo: no declararfullúltimoRootniaceptaciónclínica.
+
+Diagnósticoclínico final encontróclienterolCLIENT/entitlement/capability/compatibility/requestId/ACTIVEválidos yHTTP426enapi/data+cuatrolecturasclínicas. CoordinadorverificóFUENTEservidor3457-3465: 426sólotrassesión+vigenciaaceptadasyfaltarmarcadorcontrato. Bridge13-18 omiterutasclínicasprotegidasexplícitasdelinventarioservidor3389-3396. AdemáscausaPARENTindependiente api.js67/guardTransport36/69: conopcionesundefinedelguardmutaunobjetotemporalopts||{}, despuésapi()creaotro{}ypierdelacabecera(api('/api/data')bootstrap). No prueba de fallotemporalactivación: useStore ya activaantesdesetUser/pull; no alterarloespeculativamente.
+
+Activo proc_1fa01890404e, sóloRootlib/managed-bridge.js+api.js yfocusedtests. RED/GREEN conclienteAutoridadREAL+guardyfetchcontrolado, todasrutasclínicasexactas/marcadorsólodespuésdeaccesofresco, apiGETsinopts conservaheaders, native/M0igual yexports/consent/abandon/deletionexentos. Backend/roles/grants/vigenciaintactos. Wait180agotóventananormalmenteconnotifyON: NOwait/pollrepetido, consumirnotificación. Revisarconcurrenciadelecturasparalelas: generationenAccessGate.refresh ycancelacióngetAccesspuedencruzarse; exigirevidencianobypass/cachedallow. Artefactos managed-contract-transport-fix-{brief.txt,result.txt,log} y managed-contract-transport-fix/{report.md,summary.json,red.log,green.log} privados.
+
+CuatroT9REALES verdes anterioresyplan/metaclínicospersistidossiguenpruebasdelcódigoanterior; transportfixrequiererunrealnuevo/fullfinalyreview. NoMVPprod, frontendfuenteWIPsinpublicaciónfinal, sinrolesnominalesnirespaldoprivilegiadoautorizado. RestorespecíficosigueSINconsentimiento: no reintento/víaalternativa. Handoffnoescompletarobjetivo.
+
+### Histórico del corte cuatro T9 y diagnóstico cliente
 
 M0desktop/M0mobile/M1onboardingdesktop/M1onboardingmobile:4proyectos REALES GREEN/PlaywrightEXIT0, conjuntos ydeduplicación comprobados en coordinator-four-t9-projects-verified.json. DesktopM1 vienev10; losotros3v11. Comparaciónprogramáticaconfirma runtimefuente de10/11/12 idéntico para frontend/src,API,web,index,package. Cleanupcontenedor/red/temp/proxyTRUE en todos. No sumar pruebas preparadas ni stagefinalcomo resultado parcial: testcases completos terminaronEXIT0. Clínica aúnNOaceptada.
 
