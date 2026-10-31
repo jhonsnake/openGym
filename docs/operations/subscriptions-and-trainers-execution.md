@@ -1,6 +1,14 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: API807 y correcciones frontend aprobadas; full v5 y T9 bajo ejecución
+## Corte vigente: API807 y fixes aprobados; full v6 por integración de runners
+
+Full frontend-v5 terminó EXIT1:6680/6680 assertions PASS,0FAIL/0pending, pero1suite fallida scripts/e2e-onboarding-inputs.test.mjs: archivo node:test descubierto por Vitest sin suite registrada. No son6680 verdes globales ni fallo de producto; JSONsuccessfalse y log completo conservados. Corrección mecánica sólo de prueba: registrar sus7checks con el runner real (Vitest o Node según entorno) y admitir wrappers await at() sin perder orden waiter→click, espera de receipt/estado y readback browseractor. Ambos entrypoints ejecutados por el padre:7/7Node y7/7Vitest PASS. No exclusiones, skips ni cambios a aplicación/autenticación.
+
+Nuevo frontend-acceptance-v6 completo deriva del v5 inmutable,21122fuentes/1234frontend, ÚNICO delta scripts/e2e-onboarding-inputs.test.mjs. Así se conserva v5 rojo sin reescribirlo; aplicación exactamente igual a la revisión889hashes aprobada. Full aplicación6 proc_8f6336e60f3c en ejecución, coordinator-frontend-acceptance-v6.{json,log}; no resultado aún. La instrumentación T9 posterior de proc_b2792455ef25 vive aparte y debe acreditar sus7contratos y browser sobre fuentes finales; no se confunde con este gate de aplicación.
+
+Disco local llegó a margen bajo y el primer intento de snapshot6 se detuvo por preflight sin escribirlo. Se midieron bytes reales antes de repetir y se completó el snapshot; después se limpiaron sólo caches Docker sin uso de más24h:3.74GB liberados, imagen API985 re-inspeccionada intacta y espacio libre leído4504354816bytes. No se borraron imágenes etiquetadas, contenedores, volúmenes, fuentes ni snapshots rojos. Restore privilegiado sigue bloqueado SIN reintento.
+
+### Corte previo de revisión y diagnóstico (gates vigentes si no se sustituyen arriba)
 
 La revisión fix-only frontend-fix-review-v5.json terminó TRUE: security_concerns/logic_errors/suggestions vacíos. El padre comprobó sus889hashes contra bundle, Root y nuevo snapshot completo frontend-acceptance-v5; todos iguales. Cierra LOG01/08–12 y gramática web sin reabrir guardas. No equivale a full/T9/release. Build real con managedHint1/media1 pasó; se calcularon hashes NgDL y QOi del index compilado y ambos coinciden con DockerCSP. Nuevo snapshot completo v5 basebc18d3dc252e33f9e86e880339270a4030c580bd,21122fuentes/1234frontend, captura código corregido y auxiliares: full proc_48bd8e0cf116 en ejecución, coordinator-frontend-acceptance-v5.{json,log}, sin resultado aún.
 
