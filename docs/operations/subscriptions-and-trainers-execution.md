@@ -1,6 +1,32 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: frontend publicado; revisión HISTORY exige correcciones acotadas
+## Corte vigente: correcciones HISTORY aprobadas y web de aceptación verificada; API completa pendiente
+
+Corrector232 terminó. Coordinador ejecutó44/44pruebas focalizadas,0FAIL/0SKIP/0canceladas,EXIT0, incluidos ambos checks de empaquetado. Revisión independiente fix-only proc_d24ffa11c69e APROBADA: IHC001–005 resueltos, sin seguridad/lógica/sugerencias pendientes. Sus19hashes de código y evidencia se comprobaron contra los archivos reales. Código API sin escritores; no interpretar el full810 anterior como verde.
+
+Nuevo fullAPI proc_ac376af762ba activo sobre192fuentes selladas; log coordinator-api-history-corrected-full.log y manifiesto homónimo -manifest.json en scratch canónico. Wait120 agotado a uptime462s connotifyON: no seguir esperando/polleando, continuar trabajo independiente o ceder hasta notificación. Después de salir comprobar resultado completo y192hashes antes de publicarAPI. Contexto filtrado de esos192archivos (sin node_modules/secretos) ya preparado y comprobado en /home/jhonsnake/.local/state/opengym-mvp/api-history-release-context/.
+
+Además se cerró un defecto de portabilidad de la nueva prueba: dependía deTMPDIR explícito aunque el workflow no lo define. RED real sinTMPDIR; se cambió sólo el fixture a os.tmpdir(), que respetaTMPDIR cuando existe. GREEN5/5 conTMPDIR realmente ausente y proveedor temporal privado para no escribir en /tmp. No mocks deAPI ni cambios de producto. API HTML generado actualizado desdeOpenAPI: --check PASS,121endpoints/138schemas, package/lockRootsin cambios. Estos archivos todavía deben incluirse en la próxima publicación API.
+
+Frontend publicado bf07 compilado con APP_BUILDbf07b6ae6,media1/hint1:156archivos y ambos hashes CSP comprobados. Artefacto local /home/jhonsnake/.local/state/opengym-mvp/web-bf07-compiled/frontend-dist.tar.gz. Imagen LOCALdeaceptación johngym-web:mvp6705-acceptance,IDsha256:7c14ba325666cccc2d43a1ec8c37e5bd2da349cba25a21089901c02c4314004b, revisionbf07. Prueba realDocker:156GET/hashcompilados,13109hashesoriginales+HEAD200longitud/MIME,6554MP4/6554WebP,licencias,CSPdosHashes,indexgzip,MP4range206,UID101,rootRO,loopbackycleanupcontenedor/redtodosPASS. BaseCFCdeprueba, NOimagenfinal ni continuidad comprobada de chunks7b967 deproducción; finaldeberáderivarse de producción inspeccionada o conservar sus assets de forma verificada.
+
+Evidencia durable /home/jhonsnake/.local/state/opengym-mvp/evidence/history-corrections-and-web-bf07/manifest.json:11archivos verificados. OPERATIONS.md ya exige ambos flags managed/media y preservación de autenticación/proxy/chunks, sinactivar nada.
+
+Disco llegó a83MB. Se eliminaron SOLO cachesregenerables .vite/deps de este trabajo, sin procesosfrontend activos; alias de una ruta causó parada del primerintento y se completó deduplicando inodos/omitiendo rootsymlinks. No se declara conteo inicial inexistente; fuentes/snapshots/resultados/medios/imágenes conservados y192hashesAPIintactos; libres182923264B después. Journal coordinator-regenerable-vite-cache-cleanup.json. No borrar artefactos ni matarjobs para ganar espacio/contexto.
+
+Siguiente: consumirfullactual, publicarAPI/sources conwebsitegenerado alaprobar, construir imagenAPIcorrespondiente, repetirclínicadesktop/móvil+4T9. Aún no MVPproducción ni asignaciones nominales. Restoreprivilegiado sigue SINconsentimiento específico, no reintento/víaalternativa. Handoff no equivale a completar objetivo.
+
+### Histórico del corte API810 y corrector
+
+La suite API completa terminó EXIT1: 810 pruebas,807PASS/3FAIL/0SKIP/0canceladas. Antes de despachar otro escritor se verificaron sus192 SHA256: todos intactos. Fallos: la expectativa antigua de cero grants almacenados para cuenta pendiente y dos checks de empaquetado que prueban authority-history.js ausente de api/Dockerfile COPY. Es un defecto real de arranque de la futura imagen, no un falso fallo del entorno. No declarar807/810 como aprobación completa.
+
+Corrector exclusivo proc_232c13a9cb3e activo (sin otros escritores/gates API). Brief /home/jhonsnake/.hermes/cache/scratch/opengym-mvp/initial-history-consent-corrections-brief.txt ya dice EXECUTE NOW y la dependencia del full está resuelta; resultados/log homónimos y reportes en initial-history-consent-corrections/. Alcance IHC001–005: preservar copia al aceptar, ajustar prueba antigua sin debilitar gates, primer snapshot de replaceGrants fuera del commit y después del preflight autorizado/replay, añadir regresiones de privacidad/compatibilidad y copiar el módulo nuevo enDocker SIN relajar los checks. No frontend/producción/roles nominales ni migración.
+
+Baseline exacto para revisar sólo la corrección reconstruido en /home/jhonsnake/.local/state/opengym-mvp/initial-history-corrections-base/:11archivos, los9del diff original coinciden con su revisión y se añaden Docker y prueba adyacente desde el Gitbase. Inmutable; no editar. Se reconstruyó desde el Gitbase+diff revisado, sin leer el árbol API mientras el corrector escribía.
+
+Evidencia durable /home/jhonsnake/.local/state/opengym-mvp/evidence/initial-history-full-before-corrections/manifest.json:5archivos con log completo fallido, manifiesto192, revisiónJSON/MD y resultado comprobado. La fuente frontend bf07 y QA399 continúan publicadas con6705full y9/9Node/Vitest; API corregida todavía NO publicada ni desplegada. Tras entrega: revisar delta/pruebas, ejecutar nuevofull/revisión, publicarAPI e imagen y repetir clínica2+T9cuatro. Restore integral permanece sin consentimiento específico, no reintento/vía alternativa. No borrar snapshots/medios/imágenes/trabajos ni reiniciar sesión.
+
+### Histórico del corte revisión antes de consumir API810
 
 La revisión de9archivos terminó NO aprobada, sin hallazgos de seguridad ni filtración reproducida; hashes de los9archivos siguen idénticos. Bloqueos reales: IHC001, prueba adyacente mantiene el modelo anterior y espera0grants almacenados al aceptar pendiente (revisión reprodujo8PASS/1FAIL); IHC005, replaceGrants toma el primer snapshot dentro de BEGIN IMMEDIATE y debe tomarlo después del preflight fresco y antes del commit, según contrato144. Atomicidad actual y privacidad se conservan, pero el orden/tiempo del lock requiere corrección. Evidencia adicional a integrar como regresión durable: IHC002 aceptación/confirmación con tiempos y contenido distintos (el coordinador YA lo probó porHTTP/SQLite); IHC003 rev/wid real/null/unreadable con rollback; IHC004 grants antiguos sin copia jamás se reconstruyen. No ampliar permisos ni inventar política.
 
