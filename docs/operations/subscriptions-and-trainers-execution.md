@@ -1,6 +1,70 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
-## Corte vigente: full12 real6692 aprobado; contrato de transporte frontend en corrección
+## Corte vigente: defecto inicial de HISTORY confirmado; corrección atómica en ejecución
+
+Estado del MVP: NO desplegado. Producción conserva JohnGym y autenticación existente; no se han asignado roles ni suscripciones nominales.
+
+### Hallazgo confirmado y contrato
+
+La clínica real de escritorio y móvil ya completa prescripción, metas, ejecución de dos series con valores reales distintos de los objetivos, persistencia canónica, publicación de peso y lectura por el entrenador. El último bloqueo es HISTORY.
+
+Reproducción personal del coordinador con HTTP y SQLite reales, cuentas sintéticas y TCP limitado a 127.0.0.1: aceptar HISTORY produce un permiso activo pero cero copias históricas y cero registros al leer. Ocurre tanto con cliente conocido como con alta pendiente de confirmación. Control positivo: el reemplazo explícito de grants sí genera la copia; conserva IDs/hash ante cambios privados y reemplazo idéntico; revocar deniega; una nueva concesión captura únicamente con consentimiento nuevo. Evidencia: coordinator-initial-history-proof-private.json. Los primeros arranques del adaptador privado fallaron antes de servir por confundir el socket Unix administrativo con TCP; se corrigió el adaptador de pruebas, sin tocar producto, y la reproducción final terminó EXIT0.
+
+El contrato aprobado exige congelar al aceptar el cliente, no al confirmar el entrenador: diseño103; contratos122–124 y142–148. La confirmación sólo habilita la lectura. No es nueva política comercial ni exige otra publicación del cliente. Prohibido capturar al primer GET, reconstruir automáticamente grants antiguos sin copia o añadir una segunda concesión a la fixture para esconder el defecto.
+
+### Trabajo activo y propiedad
+
+Corrección acotada proc_c431fe437f9b, únicamente API authority-service/training/server/openapi, módulo histórico compartido y pruebas. Brief absoluto: /home/jhonsnake/.hermes/cache/scratch/opengym-mvp/initial-history-consent-fix-brief.txt; resultado/log homónimos; reportes en initial-history-consent-fix/. TDD exigido y revisión independiente posterior. Captura y aceptación atómicas, conjunto seleccionado exacto, replays sin recaptura, pendientes sin acceso funcional, eligibility=acceptedAt y enablement=confirmedAt. Diseño sin migración; si una resulta imprescindible, detener ese cambio y justificarlo. No escritores frontend ni producción. Root API usa inodos independientes del snapshot20 activo.
+
+Full frontend20 proc_26f22fe777a7 sigue siendo el gate pendiente sobre 21308 fuentes completas. Full17 fue ROJO por 184 auxiliares Gitbase omitidos al usar --no-checkout, no por un resultado aceptado del producto: 6612/6613 assertions y5 suites anidadas fallidas en4 archivos, EXIT1. Conservado sin alteraciones. Snapshot20 recupera auxiliares contra identidad de blob Git; los4 archivos antes fallidos pasan101/101 en el snapshot exacto. Todos los archivos frontend de Root coinciden con20; las escrituras API posteriores no alteran ese árbol congelado.
+
+Build compilado19 con medios y managed hints habilitados: EXIT0; ambos hashes inline reales coinciden con Docker CSP. Transporte conserva147 focales aprobados y revisión independiente de los4 archivos de producción aprobada. Son evidencias parciales, no aceptación clínica global ni release final.
+
+### Evidencia durable y próximos gates
+
+/home/jhonsnake/.local/state/opengym-mvp/evidence/history-initial-consent-and-complete-v20/manifest.json: 7 archivos copiados y comprobados por SHA256, con informe de causa/contrato, control real del coordinador, fallos17, recuperación101, build19 y resumen del snapshot completo.
+
+Siguiente: consumir corrección yfull20; verificar TDD/atomicidad/privacidad; nueva suite API completa, revisión, fuente pública e imagen pinneada; repetir clínica sin cambiar su intención y T9 tras los cambios; construir/validar imagen web final con fuente VCS y todos los medios originales. Restore integral sigue NO aceptado: falta consentimiento específico para el comando privilegiado, sin reintentos ni vías alternativas. Preservar snapshots fallidos, imágenes, medios y trabajos; no reiniciar ni borrar sesión. Guardar este handoff no completa el objetivo.
+
+### Histórico del corte investigación y recuperación de auxiliares
+
+Clínica19 desktop/móvil REALES pasanplanes/metas/objetivos/Sesión/actualescanónicos/peso/lecturatraineryconsentimientorangoexacto+ACTIVEgrantIDautorizado. ÚltimoREDambos TRAINER_HISTORY_VALUES, faltanregistrosPesoCompartido. InvestigaciónALTOriesgoprivacidad READONLY proc_7d39ce87aca7, initial-history-consent-investigation-brief/result/log ycarpeta homónima: probaracceptknownACTIVE ynewPENDING→confirm contra contrato28a, determinarfreezetimeyatomicidadsinimplementar. Indiciocódigo: authority-service nohistory_shares/composer; training230-231snapshotSOLOreplaceGrants; trainerHistoryleeúnicamentecopias. NO lazycapturaattrainerread (filtrapostconsentprivate), NOañadirreplaceGrantsenfixtureparaocultarflujoinicial. Esperap180timeoutnotifyON: no wait/pollrepetido. No backendalteradoaún.
+
+FULL17 terminóROJO:EXIT1,total6613/6612PASS/1FAIL,5suites anidadasfallidas en4FILES (3importsauxscriptsfaltantes yworkout-at mcp/srcausente). 21124hashesdeoverlayintactos. Causafixture: --no-checkout copiabasólooverlay; faltaban184filesdelGitbasequecheckoutnormalaportaba (scripts/mcp/licencias/ignore/docs/etc). No declararregresiónproducto niPASSporsubset. JSON/log/failureJSONpreservados.
+
+FreezehelperreparadoparaNUEVOtarget: uniónTODOSGittracked+overlay; extrasseobtienendev12completoyverificancontraSHA1blobGitbaseANTESdeenlazar. frontend-acceptance-v20 COMPLETO21308fuentes,21308hardlinksinmutables, sinedicionesasnapshotviejo. Coordinadorrealmenteejecutó4filesantesfallidos enFROZEN20:101/101PASS. Primer101enRootnoeradepruebafixtureyseetiquetóseparadolog; frozenproofcoordinator-v20-frozen-auxiliary-recovery.log. NuevoFULL20 proc_26f22fe777a7 activo coordinator-frontend-acceptance-v20.{json,log}, noresultadotodavía. Nootrosfullactivos.
+
+BuildFRONTENDcompiladoreal19 conmedia1+managedHint1 EXIT0, distindexpresente, inlinehashesNgDL/QOi calculadosyambosenDockerCSP; logcoordinator-managed-queue-v19-build.log. EsSTAGINGsinVCSrelease,noimagenfinal. Código4producciónreviewindependienteTRUEy147focalespadrevigentes. Auxiliaresrecuperadosnocambianruntime; todosmediasoriginalesintactos. Disco~360MB, respetarpreservaciónsnapshots/fuentes/medias/imágenesyjobs; thinfrontendimagefinalposiblesóloconfuenteVCSverdaderoyvalidación.
+
+Siguienteconsumir2jobs, cerrarsemánticaHISTORYinicialsegúncontratoypruebareal, luegoAPI/clinicalgatesafectados/fullfinal/T9postfix/sourcecommitpush/imagenVCS+assets/restoreautorizado/despliegue. RestoreprivilegiadoSIGUESINconsentimientoespecífico,no reintento/víaalternativa. NoMVPprodnirolesnominalesmutados. Guardarhandoffnoescompletarobjetivo.
+
+### Histórico del corte transporte aprobado y clínica19
+
+ColaFRESCAporbridge entregada ycoordinador ejecutó147/147PASS en10archivos. SinAPIserver/store/cambiosroles: cadaoperaciónsucheckpropio, inicializaciónincluida, denegación/accountswitch/cancelación/recoveryprobados. Hashbridge8e35d9b08316646f646a3256a6d5faa7878b9ce8c8618ba47d69bfaac7e0dba7. ConcurrenciacounterexampleREDanteriorconservado, noediciónparaocultarlo.
+
+RevisiónindependienteFINALdeltaPRODUCCIÓN4archivos desdev5a15 TRUE,security_concerns/logic_errorsvacíos; coordinadorcomprobó4hashesRoot/F17 exactos. IncluyeInvitationFlowrefnull/TrainerPrescriptionsmountedsetup/apioptionssingle/bridgeinventory+freshqueue. final-runtime-fix-review.json. Diffmide5467BYTESUTF8/5465caracteres (etiqueta5465bytespreviaeraunidaderrónea), SHA4328fc83c4cbab0e9be632a9e286eb512dac21f71fbd7278a7adc14590a4b69a. No browserPASSglobalasumido.
+
+Clínica17/18 REALESdesktop+móvil yaabrenplancliente, inician/finalizansesión, capturan2sets convaloresdistintosdelosobjetivos, readbackcanónicoactualexactoypublicanpeso; entrenadormuestra11repsyCarga20.5kg. FallosQAresueltos: marcadorcontratorequeridoenprobeRAWdeGETpersonal(noespermiso), ClientSetEditorinputModeesTEXTBOXnoSPINBUTTON ylegendnos numera; seassertacantidad1/2 ysenaveganíndicesdefieldsetscorrectos; entrenadorusaCarga,noexternal. EtapafalloprimeroahoraseescribeprivadaJSONantesdelaredacciónparanoperderT10stage; runnerreconocefamiliaT10. Ningúndatopersonal/Cookie/payloadregistrado.
+
+Clínica18 últimoRED HISTORY_GRANT_READBACK: consumidorQApretendíaIDdeclientRelations, peroservidor467devuelvedescriptoresdeconsentimientoSINIDdeliberadamente; trainerRelations440síexponegrantIdautorizado. FixQA19verificaconsentimientopropioincluyepeso,obtieneACTIVEHISTORYdeAPItrainerrelations,yexigeigualdadexactadelrango.No cambiarproductor/grants. Activo proc_7e0ef1293202 REALclinicaldesktop/mobile sobrefrontend-browser-final-v19,coordinator-v19-real-clinical.log yv19-real-clinical/. Sinningúnescritorproducto.
+
+Full17postqueue proc_2589c4f8367c ACTIVO,inmutable21124fuentes; últimaconsultafinalJSONtodavíanoexiste. Full12/6692esPREtransportenoúltimoFullRoot. Archivosproducción17/19idénticosareview; sóloQAe2e cambia. Snapshots16+compartehardlinksTODOSlosfilesinmutables, sólooverrideQAenCOPIAS; PROHIBIDOeditarsourcecompartida.Reusableprivatefreeze-acceptance-candidate.pyprobado19 --no-checkout/read-tree+hashes. Disco~320MB: nodelesnapshots/medias/imágenesnireset/matarjobs; considerarthinbuildoverlayfrontendconVCSverdaderoybaseCFCpersonalyaverificada.
+
+Siguienteconsumir2jobs; cerrarclínica, repetir4T9postqueue/fullfinal/build/sourcepublication/imagenVCS+todosassets; restoreprivilegiadopermaneceSINconsentimientoespecífico,noreintentarnialternativa. NoMVPprod/cuentasrolesnominalesmutadas. Handoffnoequivaleaterminarobjetivo.
+
+### Histórico del corte marcadores y carrera
+
+Corrección de inventario exacto yoptionsúnicas entregada: sóloapi.js/managed-bridge.js+test, sinstore/backend. Coordinador ejecutó142/142PASS en10archivos ycomparó3hashesreportados exactos (api040200a5f1e50c02fa58cbd45560986d3cb881ff3a64a5a96f37ed25b098aab0, bridged2f34c2baa9d35759e602d871df5622294a3230ce1d4ddfb983a514874f91529). Full12/6692precedeesefix. No declaraciónMVPaceptado.
+
+Realv14 (MISMO runtime13 yspecdiagnósticopasivo) confirma api/data200 yclient/sessions/current200: HTTP426corregido. ClienteuidmatchedTRUE ytodoslosaccessbooleansTRUE; markerreadypasóprimero, después8–10repeticionesnofound30s ycomponentedesapareció. Muchasrespuestasaccess200, restanteslecturasclínicasnodespachadas,cleanupalltrue. No inferirotracausasinprueba. Artifactv14-real-client-diagnostic/clinical-client-route-diagnostic.json youtputJSON; runtime13/14bytesidénticos, sóloinstrumentaciónT10diferente.
+
+Hazardconcurrente demostrado enunidadREALapi+bridge+authority+gate, sólofetchcontrolado: dosprotectedGETs, primerarespuestaallowedresuelvemientrasúltimapendiente; generationcompartida invalidaelprimerocomo checking. Resultado rejected/fulfilled sólosaleúltimoconmarker. CoordinadorRE-EJECUTÓprivateVitest:1FAIL/1PASScontrol, sintypos/importfail/sleeps. Artefactos managed-transport-concurrency-review/{report.md,summary.json,managed-transport-concurrency.test.js,vitest.config.mjs} ycoordinator-concurrent-transport-red.log. Estaespruebaunidad determinista ybrowserconsistente, noPostfixbrowserPASS.
+
+Activo proc_6fcce999dc44 sóloRootmanagedbridge+tests: secuenciarchequeosFRESCOSporrequest/bridgeincluyendoinicialización, conservaraccountswitch/denegación/invalidation/generación, sincachedallow,singlobalqueueentrecuentas,nopoisondespuésdefallo. RED/GREENconbarriersadaptadosaordenserial ynegativoscorrectos: primerrequestpermitidoANTESdeposteriorrevocaciónpuedecompletar, segundoMUSTdeny; antiguoprivateREDcontrolambosdenegadosnoescontratonormativotrasordenexplícito. NoeditarevidenciaREDvieja,nocambiarbackend/roles/store. Brief/result/log managed-transport-queue-fix-* yreport/summaryprivadoshomónimos.
+
+Nootrosescritores. Últimosfull/matrizT9pre-transportpermanecenhistóricos, debenrepetirsepostqueue. Nuevossnapshots13/14CON--no-checkout+read-treepermitieron13108hardlinksNUEVOSmediasinmutables, restoCopiasy21124hashesverificados; noeditarlosmedia.Snapshot12sinlinksquedócompletamenteverificado, noborrado. Disco~600MB, medirantesdebuild/copia; noprunesdeimágenes/snapshots. RestoreprivilegiadoSINconsentimientoespecífico, no reintentos/víaalternativa; producción/rolesnominalesintactos.
+
+### Histórico del corte full12 y marcadores
 
 Full12 REAL6692/6692PASS,0FAIL/0pending,565archivos sin fallos,JSONsuccessTRUE yEXIT0. Coordinador parseóresultadofinalyverificó21124hashesinmutablessindiferencias; coordinator-frontend-acceptance-v12-verified.json. IncluyeTrainerStrictfix, peroPRECEDE a correccióntransporteabajo: no declararfullúltimoRootniaceptaciónclínica.
 
