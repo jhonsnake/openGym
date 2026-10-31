@@ -1,5 +1,13 @@
 # Ejecución del MVP de suscripciones y entrenadores
 
+## Bloqueo de privacidad y verificación empaquetada más recientes
+
+La prueba aislada de retirada y nueva concesión de WEIGHT reprodujo exposición de una medición capturada durante el intervalo privado, sin HISTORY explícito. No hubo datos reales ni producción afectados. El despliegue queda bloqueado: se requiere un límite duradero por periodo/categoría de consentimiento y regresiones de no exposición, preservando captura privada, registros propios y exportación. La corrección está preparada para el siguiente corte API exclusivo; no se asume implementada.
+
+La imagen T7 local sha256:c504edfab06ec67094df4a61b7e7710de7880b8c36917ee555fc0a2362858b65 sí pasó HTTP real empaquetado: exportación propia 200 con identidad activa sin CLIENT/vigencia, descarga private/no-store, ajeno/desconocido 404 opaco, solicitud de eliminación 200 REQUESTED y archivo personal sin cambios. Root de contenedor de sólo lectura, capabilities retiradas y puertos sólo loopback verificados; recursos de prueba eliminados. Esto no prueba aún T9 ni los arreglos pendientes de sesiones/consentimiento.
+
+La suite frontend de la fixture parcial no pasó: 6458 pruebas, 6390 PASS/68 FAIL y suites sin cargar. Se corrigieron 30 mocks conservando el módulo real de guardias; resultados focales reportados 394/394. Se reprodujo y corrigió además una aserción que rechazaba un alias Docker válido: 51 pruebas API-base/CSP coordinadas PASS, cambio de test publicado en13eb7ac20995342041eadbde72af796ec2021034. Nueva suite congelada sobre repositorio completo en ejecución. Workspace de prescripción/consentimiento y harness T9 real continúan; no declarar MVP completo.
+
 ## Verificación más reciente: integración T7 y recuperación bajo corrección
 
 - T7 módulo propio: revisión independiente aprobada, 5 pruebas coordinadas PASS. Integración HTTP/DTO/Docker: 15 pruebas focales coordinadas PASS sobre fixture completa con fuentes T7 congeladas; no es gate global.
